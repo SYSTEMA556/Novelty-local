@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
+import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
@@ -76,11 +77,13 @@ String _stripExtension(String name) {
 ///
 /// 縦書き／横書き・ページめくり・ルビなどの閲覧設定は
 /// サイトの小説と同じものが適用される。
+/// [workId] を指定すると、読書位置（しおり）を自動で保存・復元する。
 class LocalTextReaderPage extends HookConsumerWidget {
   /// コンストラクタ。
   const LocalTextReaderPage({
     required this.title,
     required this.elements,
+    this.workId,
     super.key,
   });
 
@@ -90,12 +93,32 @@ class LocalTextReaderPage extends HookConsumerWidget {
   /// 表示する本文要素。
   final List<NovelContentElement> elements;
 
+  /// ローカルライブラリの作品ID。null の場合は読書位置を保存しない。
+  final String? workId;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
     // 本文に集中できるよう初期状態はAppBarを隠す
     final isAppBarVisible = useState(false);
-    final isVertical = settings.value?.isVertical ?? false;
+    final settingsValue = settings.value;
+    final isVertical = settingsValue?.isVertical ?? false;
+    final mode = readingModeKey(
+      isVertical: isVertical,
+      isPageFlip: settingsValue?.isPageFlip ?? false,
+    );
+
+    Widget body = NovelContentBody(
+      workId: workId ?? 'local:$title',
+      episode: 1,
+      settings: settings,
+      content: AsyncData(elements),
+    );
+
+    final id = workId;
+    if (id != null) {
+      body = _BookmarkScope(workId: id, mode: mode, child: body);
+    }
 
     return Scaffold(
       appBar: isAppBarVisible.value
@@ -107,20 +130,112 @@ class LocalTextReaderPage extends HookConsumerWidget {
         onTap: () => isAppBarVisible.value = !isAppBarVisible.value,
         child: Stack(
           children: [
-            SafeArea(
-              top: !isAppBarVisible.value,
-              child: NovelContentBody(
-                workId: 'local:$title',
-                episode: 1,
-                settings: settings,
-                content: AsyncData(elements),
-              ),
-            ),
+            SafeArea(top: !isAppBarVisible.value, child: body),
             // 縦書きモード時、ホームジェスチャーとの競合を防ぐ
             if (isVertical) const GestureShield(),
           ],
         ),
       ),
     );
+  }
+}
+
+/// 表示モードを読書位置の保存キーに変換する。
+///
+/// スクロール位置の意味がモードごとに異なるため、別々に保存する。
+String readingModeKey({required bool isVertical, required bool isPageFlip}) {
+  if (!isVertical) return 'h';
+  return isPageFlip ? 'vp' : 'vs';
+}
+
+/// 配下のスクロール位置を読書位置として保存・復元するウィジェット。
+///
+/// Flutter のスクロールは位置を [PageStorage] に書き込み、
+/// 生成時に読み戻す。その保存先を差し替えることで、
+/// 本文ウィジェットに手を入れずに「続きから読む」を実現する。
+class _BookmarkScope extends HookConsumerWidget {
+  const _BookmarkScope({
+    required this.workId,
+    required this.mode,
+    required this.child,
+  });
+
+  final String workId;
+  final String mode;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(readingPositionsProvider.notifier);
+    final modeRef = useRef(mode)..value = mode;
+
+    final bucket = useMemoized(
+      () => PersistentPageStorageBucket(
+        initialValues: {
+          ...?ref.read(readingPositionsProvider).value?[workId]?.offsets,
+        },
+        currentKey: () => modeRef.value,
+        // スクロール処理の途中で状態を変えないよう、処理後に反映する
+        onWrite: (key, value) => scheduleMicrotask(
+          () => notifier.update(workId, mode: key, offset: value),
+        ),
+      ),
+    );
+
+    useEffect(() {
+      // 開いた時点で「最近読んだ」作品として記録する
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        notifier.update(workId);
+      });
+      // 画面を閉じたら保留中の保存を確定させる
+      return () => unawaited(notifier.flush());
+    }, [workId]);
+
+    return NotificationListener<ScrollEndNotification>(
+      onNotification: (notification) {
+        final metrics = notification.metrics;
+        final max = metrics.maxScrollExtent;
+        final progress = max <= 0 ? 1.0 : metrics.pixels / max;
+        scheduleMicrotask(() => notifier.update(workId, progress: progress));
+        return false;
+      },
+      child: PageStorage(bucket: bucket, child: child),
+    );
+  }
+}
+
+/// 読み書きを1つのキー（表示モード）に集約する [PageStorageBucket]。
+///
+/// 読書画面にはスクロール領域が1つしかないため、
+/// 識別子は使わず表示モードごとに値を保持する。
+@visibleForTesting
+class PersistentPageStorageBucket extends PageStorageBucket {
+  /// コンストラクタ。
+  PersistentPageStorageBucket({
+    required Map<String, double> initialValues,
+    required this.currentKey,
+    required this.onWrite,
+  }) : _values = initialValues;
+
+  final Map<String, double> _values;
+
+  /// 現在の表示モードのキーを返す。
+  final String Function() currentKey;
+
+  /// 位置が書き込まれたときに呼ばれる。
+  final void Function(String key, double value) onWrite;
+
+  @override
+  Object? readState(BuildContext context, {Object? identifier}) {
+    return _values[currentKey()];
+  }
+
+  @override
+  void writeState(BuildContext context, Object? data, {Object? identifier}) {
+    if (data is! double) return;
+    final key = currentKey();
+    if (_values[key] == data) return;
+    _values[key] = data;
+    onWrite(key, data);
   }
 }

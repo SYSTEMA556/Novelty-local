@@ -7,6 +7,7 @@ import 'package:novelty/domain/library_filter_state.dart';
 import 'package:novelty/models/novel_info_extension.dart';
 import 'package:novelty/models/novel_search_query.dart';
 import 'package:novelty/repositories/novel_repository.dart';
+import 'package:novelty/screens/local_library_view.dart';
 import 'package:novelty/screens/search_page.dart';
 import 'package:novelty/sites/novel_site_registry.dart';
 import 'package:novelty/sites/novel_source.dart';
@@ -82,8 +83,17 @@ class LibraryPage extends ConsumerWidget {
       );
     }
 
-    return Scaffold(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
       appBar: AppBar(
+        // Web小説とローカル作品をタブで切り替える
+        bottom: const TabBar(
+          tabs: [
+            Tab(text: 'Web小説'),
+            Tab(text: 'ローカル'),
+          ],
+        ),
         title: Row(
           children: [
             const Text('ライブラリ'),
@@ -138,7 +148,9 @@ class LibraryPage extends ConsumerWidget {
           ),
         ],
       ),
-      body: Column(
+      body: TabBarView(
+        children: [
+      Column(
         children: [
           Expanded(
             child: filteredNovelsAsync.when(
@@ -209,6 +221,10 @@ class LibraryPage extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+          const LocalLibraryView(),
+        ],
+      ),
       ),
     );
   }
