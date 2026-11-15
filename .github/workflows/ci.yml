@@ -90,3 +90,11 @@ jobs:
 
       - name: Build Android APK (release)
         run: mise exec -- flutter build apk --release
+
+      # フォーク用: ビルドしたAPKをダウンロードできるよう保存する
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: novelty-local-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
