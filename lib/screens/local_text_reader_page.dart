@@ -177,7 +177,7 @@ class _BookmarkScope extends HookConsumerWidget {
         currentKey: () => modeRef.value,
         // スクロール処理の途中で状態を変えないよう、処理後に反映する
         onWrite: (key, value) => scheduleMicrotask(
-          () => notifier.update(workId, mode: key, offset: value),
+          () => notifier.record(workId, mode: key, offset: value),
         ),
       ),
     );
@@ -185,7 +185,7 @@ class _BookmarkScope extends HookConsumerWidget {
     useEffect(() {
       // 開いた時点で「最近読んだ」作品として記録する
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        notifier.update(workId);
+        notifier.record(workId);
       });
       // 画面を閉じたら保留中の保存を確定させる
       return () => unawaited(notifier.flush());
@@ -196,7 +196,7 @@ class _BookmarkScope extends HookConsumerWidget {
         final metrics = notification.metrics;
         final max = metrics.maxScrollExtent;
         final progress = max <= 0 ? 1.0 : metrics.pixels / max;
-        scheduleMicrotask(() => notifier.update(workId, progress: progress));
+        scheduleMicrotask(() => notifier.record(workId, progress: progress));
         return false;
       },
       child: PageStorage(bucket: bucket, child: child),

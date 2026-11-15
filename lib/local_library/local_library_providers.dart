@@ -76,7 +76,7 @@ class ReadingPositionsNotifier
   ///
   /// [mode] は表示モード、[offset] はそのモードでのスクロール位置。
   /// [progress] は読み進めた割合（0.0〜1.0）。null の場合は前回値を維持する。
-  void update(
+  void record(
     String workId, {
     String? mode,
     double? offset,
