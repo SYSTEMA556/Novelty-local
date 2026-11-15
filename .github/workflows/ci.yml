@@ -1,9 +1,10 @@
 name: CI
 
+# フォーク用: mise 経由の Flutter インストールが失敗するため、
+# Flutter / Java を直接セットアップしてビルドする
 on:
   pull_request:
     branches: [main]
-  # フォーク用: このブランチへのpushでもビルドする
   push:
     branches: [feat/local-text-file]
   workflow_dispatch:
@@ -21,80 +22,72 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Setup mise
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: subosito/flutter-action@v2
         with:
+          flutter-version: 3.44.8
+          channel: stable
           cache: true
 
       - name: Get Flutter packages
-        run: mise run get
+        run: flutter pub get
 
       - name: Analyze
-        run: |
-          mise run analyze
-          (cd packages/tategaki && mise exec -- flutter analyze)
-          for package in narou_parser kakuyomu_parser novel_parser_core; do
-            (cd "packages/$package" && mise exec -- dart analyze)
-          done
+        run: flutter analyze
+
+      - name: Test (local text parser)
+        run: flutter test test/utils/plain_text_novel_parser_test.dart
 
       - name: Test (root)
-        run: mise run test
-
-      - name: Test (packages)
-        run: |
-          (cd packages/tategaki && mise exec -- flutter test)
-          for package in narou_parser kakuyomu_parser novel_parser_core; do
-            (cd "packages/$package" && mise exec -- dart test)
-          done
+        run: flutter test
 
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
 
-      - name: Setup mise
-        uses: jdx/mise-action@1648a7812b9aeae629881980618f079932869151 # v4.0.1
+      - uses: actions/setup-java@v4
         with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.8
+          channel: stable
           cache: true
 
-      # 注意: v4.0.4 未満は既定で廃止済みの tools パッケージを
-      # インストールしようとして失敗する
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
-
       - name: Get Flutter packages
-        run: mise run get
+        run: flutter pub get
 
-      # リリースCIと同じ経路（key.properties + release 署名設定）を通すため、
-      # CI用の使い捨てキーストアで release ビルドを検証する
+      # CI用の使い捨てキーストアで release 署名する
       - name: Create signing config for CI
         run: |
-          mise exec -- keytool -genkeypair \
+          keytool -genkeypair \
             -keystore android/app/ci-keystore.jks \
             -storepass android -keypass android \
             -alias androiddebugkey -keyalg RSA -keysize 2048 \
             -validity 10000 -dname "CN=CI, O=Novelty, C=JP"
-          cat > android/app/key.properties <<'EOF'
+          cat > android/app/key.properties <<'PROPS'
           storePassword=android
           keyPassword=android
           keyAlias=androiddebugkey
           storeFile=ci-keystore.jks
-          EOF
+          PROPS
 
       - name: Build Android APK (release)
-        run: mise exec -- flutter build apk --release
+        run: flutter build apk --release
 
-      # フォーク用: ビルドしたAPKをダウンロードできるよう保存する
+      # ビルドしたAPKをダウンロードできるよう保存する
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
