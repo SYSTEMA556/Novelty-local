@@ -70,23 +70,27 @@ class NovelContent extends HookConsumerWidget {
   }
 }
 
-/// 設定とコンテンツの状態に応じて表示を切り替える内部ウィジェット。
-@visibleForTesting
+/// 設定とコンテンツの状態に応じて表示を切り替えるウィジェット。
+///
+/// サイトから取得した本文だけでなく、ローカルのテキストファイルの
+/// 表示にも再利用する。
 class NovelContentBody extends HookWidget {
   /// コンストラクタ
   const NovelContentBody({
-    required this.source,
     required this.workId,
     required this.episode,
     required this.settings,
     required this.content,
+    this.source,
     super.key,
   });
 
-  /// 提供サイト（プロバイダ）。
-  final NovelSource source;
+  /// 提供サイト（プロバイダ）。ローカルファイル表示時は null。
+  final NovelSource? source;
 
   /// サイト共通の作品ID（なろうはNコード）。
+  ///
+  /// スクロール位置を保存するキーにも使用する。
   final String workId;
 
   /// 小説のエピソード番号

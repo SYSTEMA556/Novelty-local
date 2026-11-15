@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:novelty/router/router.dart';
+import 'package:novelty/screens/local_text_reader_page.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -112,6 +113,14 @@ class _MorePageState extends ConsumerState<MorePage> {
           leading: const Icon(Icons.download),
           title: const Text('ダウンロードキュー'),
           onTap: () => const DownloadsRoute().go(context),
+        ),
+        ListTile(
+          leading: const Icon(Icons.file_open_outlined),
+          title: const Text('テキストファイルを開く'),
+          subtitle: const Text('端末内の .txt ファイルを読書画面で表示します'),
+          onTap: () async {
+            await openLocalTextFile(context);
+          },
         ),
       ],
     );
