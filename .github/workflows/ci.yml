@@ -3,6 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # フォーク用: このブランチへのpushでもビルドする
+  push:
+    branches: [feat/local-text-file]
   workflow_dispatch:
 
 concurrency:
