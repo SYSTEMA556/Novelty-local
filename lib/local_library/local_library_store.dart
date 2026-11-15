@@ -49,13 +49,13 @@ class LocalLibraryStore {
     if (!_indexFile.existsSync()) return [];
     final raw = await _indexFile.readAsString();
     // 5000件規模でもUIが固まらないよう別Isolateで解析する
-    return Isolate.run(() => decodeWorks(raw));
+    return _decodeWorksInBackground(raw);
   }
 
   /// 作品一覧を保存する。
   Future<void> saveWorks(List<LocalWork> works) async {
     final data = [for (final w in works) w.toJson()];
-    final raw = await Isolate.run(() => jsonEncode(data));
+    final raw = await _encodeInBackground(data);
     await _writeAtomically(_indexFile, raw);
   }
 
@@ -124,9 +124,7 @@ class LocalLibraryStore {
       final end = (start + batchSize).clamp(0, paths.length);
       final batch = paths.sublist(start, end);
       final known = Set<String>.of(knownIds);
-      final results = await Isolate.run(
-        () => importBatch(batch, textsPath, known),
-      );
+      final results = await _importBatchInBackground(batch, textsPath, known);
 
       for (final result in results) {
         final work = result.work;
@@ -159,6 +157,20 @@ class LocalLibraryStore {
     await tmp.rename(file.path);
   }
 }
+
+// Isolateへ渡すクロージャが呼び出し元の状態を巻き込まないよう、
+// 引数だけを受け取るトップレベル関数を経由する。
+Future<List<LocalWork>> _decodeWorksInBackground(String raw) =>
+    Isolate.run(() => decodeWorks(raw));
+
+Future<String> _encodeInBackground(Object data) =>
+    Isolate.run(() => jsonEncode(data));
+
+Future<List<ImportItemResult>> _importBatchInBackground(
+  List<String> paths,
+  String textsDirPath,
+  Set<String> knownIds,
+) => Isolate.run(() => importBatch(paths, textsDirPath, knownIds));
 
 /// 作品一覧のJSONを解析する（Isolateから呼び出す）。
 @visibleForTesting

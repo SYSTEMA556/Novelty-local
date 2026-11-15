@@ -35,7 +35,7 @@ class LocalWorkReaderPage extends HookConsumerWidget {
       await ref.read(readingPositionsProvider.future);
       final text = await store.readText(work.id);
       // 長編でもUIが固まらないよう別Isolateで解析する
-      return Isolate.run(() => PlainTextNovelParser.parse(text));
+      return parseInBackground(text);
     }, [work.id]);
     final snapshot = useFuture<List<NovelContentElement>>(future);
 
@@ -55,4 +55,12 @@ class LocalWorkReaderPage extends HookConsumerWidget {
       workId: work.id,
     );
   }
+}
+
+/// 本文を別Isolateで解析する。
+///
+/// Isolateへ渡すクロージャが画面の状態（ref や context）を
+/// 巻き込まないよう、引数だけを受け取るトップレベル関数にしている。
+Future<List<NovelContentElement>> parseInBackground(String text) {
+  return Isolate.run(() => PlainTextNovelParser.parse(text));
 }
