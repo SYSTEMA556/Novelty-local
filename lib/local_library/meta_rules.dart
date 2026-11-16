@@ -190,11 +190,8 @@ class StripPattern {
     isBuiltin: true,
   );
 
-  // 自作ルールの識別子（組み込みは種類から決まるため null）
-  final String? _customId;
-
   /// 識別子。
-  String get id => _customId ?? 'builtin:${builtin!.name}';
+  final String id;
 
   /// 表示名。
   final String name;
