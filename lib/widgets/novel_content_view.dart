@@ -157,7 +157,7 @@ class NovelContentView extends HookWidget {
       if (!hasHighlight || anchorKey == null) return;
       if (hlStart >= from && hlStart < to) {
         spans.add(
-          WidgetSpan(child: SizedBox(key: anchorKey, width: 0, height: 0)),
+          WidgetSpan(child: SizedBox.shrink(key: anchorKey)),
         );
       }
     }

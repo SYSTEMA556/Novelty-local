@@ -37,7 +37,7 @@ class TategakiConverter {
 
   /// 変換し、各縦書き要素が本文のどこから始まるかも返す。
   ///
-  /// 位置は [SpeechDocument] と同じ「本文位置」（地の文は文字数、
+  /// 位置は読み上げ（`SpeechDocument`）と同じ「本文位置」（地の文は文字数、
   /// ルビ・傍点は親文字の文字数、改行は1）で数える。
   /// 読み上げ中の文を縦書き表示の要素に対応づけるために使う。
   static TategakiConversion convertWithOffsets(

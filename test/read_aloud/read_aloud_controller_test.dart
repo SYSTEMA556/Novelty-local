@@ -50,7 +50,7 @@ void main() {
     reported = [];
     controller = ReadAloudController(
       document: SpeechDocument.fromElements([
-        const PlainText('一文目。二文目。三文目。'),
+        PlainText('一文目。二文目。三文目。'),
       ]),
       engine: engine,
       onPositionChanged: (s) => reported.add(s.start),
