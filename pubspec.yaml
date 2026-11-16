@@ -64,6 +64,7 @@ dependencies:
   tategaki:
     path: packages/tategaki
   url_launcher: ^6.3.2
+  wakelock_plus: ^1.2.8
 dev_dependencies:
   build_runner: 2.15.1
   drift_dev: ^2.34.0

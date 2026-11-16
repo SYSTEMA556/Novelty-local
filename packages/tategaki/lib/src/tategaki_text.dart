@@ -7,6 +7,7 @@ import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/tategaki_column_engine.dart';
 import 'package:tategaki/src/layout/tategaki_layout.dart';
 import 'package:tategaki/src/painting/tategaki_column_painter.dart';
+import 'package:tategaki/src/tategaki_text_controller.dart';
 
 /// 縦書きテキストを表示するウィジェット（横スクロール）
 ///
@@ -25,6 +26,8 @@ class TategakiText extends StatefulWidget {
     required this.height,
     this.highlight,
     this.followHighlight = true,
+    this.controller,
+    this.onVisibleElementChanged,
     super.key,
   });
 
@@ -39,6 +42,13 @@ class TategakiText extends StatefulWidget {
 
   /// [highlight] が画面外に出たら自動でスクロールするか
   final bool followHighlight;
+
+  /// 外から位置を移動するためのコントローラー
+  final TategakiTextController? controller;
+
+  /// スクロールが止まったとき、画面の読み始め側にある要素の位置を知らせる
+  /// （全体のどこを読んでいるかの表示に使う）
+  final ValueChanged<int>? onVisibleElementChanged;
 
   @override
   State<TategakiText> createState() => _TategakiTextState();
@@ -70,8 +80,46 @@ class _TategakiTextState extends State<TategakiText> {
   final ScrollController _scrollController = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    widget.controller?.addListener(_onControllerRequest);
+    // 復元されたスクロール位置を、最初の描画後に知らせる
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _reportVisibleElement();
+    });
+  }
+
+  void _onControllerRequest() {
+    final element = widget.controller?.takePendingElement();
+    if (element != null) _revealElement(element, jump: true);
+  }
+
+  /// 画面の読み始め側にある要素の位置を知らせる
+  void _reportVisibleElement() {
+    final callback = widget.onVisibleElementChanged;
+    if (callback == null || !_scrollController.hasClients) return;
+    final engine = _currentEngine;
+    final pixels = _scrollController.position.pixels;
+    var start = 0.0;
+    for (var i = 0; i < engine.computedColumnCount; i++) {
+      final column = engine.columnAt(i);
+      final end = start + column.width + TategakiLayout.columnSpacing;
+      final first = column.firstElementIndex;
+      if (end > pixels && first != null) {
+        callback(first);
+        return;
+      }
+      start = end;
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant TategakiText oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller?.removeListener(_onControllerRequest);
+      widget.controller?.addListener(_onControllerRequest);
+    }
     final highlight = widget.highlight;
     if (widget.followHighlight &&
         highlight != null &&
@@ -84,12 +132,16 @@ class _TategakiTextState extends State<TategakiText> {
 
   @override
   void dispose() {
+    widget.controller?.removeListener(_onControllerRequest);
     _scrollController.dispose();
     super.dispose();
   }
 
   /// 要素 [elementIndex] を含む列が見えていなければ、見える位置へ動かす
-  void _revealElement(int elementIndex) {
+  ///
+  /// [jump] が true なら、見えていても列を読み始め側の端に置き、
+  /// アニメーションせずに移動する（シークバーでの移動用）。
+  void _revealElement(int elementIndex, {bool jump = false}) {
     if (!_scrollController.hasClients) {
       return;
     }
@@ -113,17 +165,24 @@ class _TategakiTextState extends State<TategakiText> {
     final position = _scrollController.position;
     final visibleStart = position.pixels;
     final visibleEnd = visibleStart + position.viewportDimension;
-    if (start >= visibleStart && start + columnWidth <= visibleEnd) {
+    if (!jump && start >= visibleStart && start + columnWidth <= visibleEnd) {
       return; // すでに見えている
     }
     // 読み進める方向に余裕を持たせ、画面の手前寄りに置く
-    final target = (start - position.viewportDimension * 0.1).clamp(
-      0.0,
-      double.infinity,
-    );
+    final target = jump
+        ? start
+        : (start - position.viewportDimension * 0.1).clamp(
+            0.0,
+            double.infinity,
+          );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scrollController.hasClients) return;
       final max = _scrollController.position.maxScrollExtent;
+      if (jump) {
+        _scrollController.jumpTo(target > max ? max : target);
+        _reportVisibleElement();
+        return;
+      }
       unawaited(
         _scrollController.animateTo(
           target > max ? max : target,
@@ -212,7 +271,12 @@ class _TategakiTextState extends State<TategakiText> {
         }
         return false;
       },
-      child: ListView.separated(
+      child: NotificationListener<ScrollEndNotification>(
+        onNotification: (_) {
+          _reportVisibleElement();
+          return false;
+        },
+        child: ListView.separated(
         // PageStorageKey でスクロール位置を保持する
         key: scrollPositionKey,
         controller: _scrollController,
@@ -239,6 +303,7 @@ class _TategakiTextState extends State<TategakiText> {
             ),
           );
         },
+        ),
       ),
     );
   }

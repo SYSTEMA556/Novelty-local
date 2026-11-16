@@ -187,6 +187,15 @@ class ReadingPositionsNotifier
     _saveTimer = Timer(const Duration(seconds: 1), () => unawaited(_flush()));
   }
 
+  /// 作品の読書位置（履歴）を消す。
+  void forget(String workId) {
+    final current = state.value;
+    if (current == null || !current.containsKey(workId)) return;
+    state = AsyncData({...current}..remove(workId));
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(seconds: 1), () => unawaited(_flush()));
+  }
+
   /// 保留中の読書位置をすぐに保存する。
   Future<void> flush() async {
     _saveTimer?.cancel();

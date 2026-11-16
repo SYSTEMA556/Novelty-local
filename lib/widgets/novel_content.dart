@@ -11,6 +11,7 @@ import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/font_family.dart';
 import 'package:novelty/utils/line_length.dart';
 import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/utils/tategaki_converter.dart';
 import 'package:novelty/widgets/novel_content_view.dart';
 import 'package:tategaki/tategaki.dart';
@@ -85,6 +86,7 @@ class NovelContentBody extends HookWidget {
     this.source,
     this.highlightStart,
     this.highlightEnd,
+    this.navigation,
     super.key,
   });
 
@@ -110,6 +112,9 @@ class NovelContentBody extends HookWidget {
 
   /// 背景色を付ける範囲の終了（本文位置、含まない）
   final int? highlightEnd;
+
+  /// 全体のどこにいるかの表示・シークバーでの移動（使わなければ null）
+  final ReaderNavigation? navigation;
 
   @override
   Widget build(BuildContext context) {
@@ -163,6 +168,10 @@ class NovelContentBody extends HookWidget {
       [contentData, settingsData?.isRubyEnabled],
     );
     final tategakiElements = conversion?.elements;
+    final nav = navigation;
+    if (nav != null) {
+      nav.tategakiElementCount = tategakiElements?.length ?? 0;
+    }
 
     // 読み上げ中の文などに付ける背景色
     final highlightColor = Theme.of(
@@ -244,6 +253,10 @@ class NovelContentBody extends HookWidget {
                         width: constraints.maxWidth,
                         height: constraints.maxHeight,
                         highlight: tategakiHighlight,
+                        controller: nav?.pageController,
+                        onPageCountChanged: nav == null
+                            ? null
+                            : (count) => nav.pageCount.value = count,
                         padding: verticalModePadding.copyWith(
                           bottom: verticalModePadding.bottom + extra,
                         ),
@@ -270,6 +283,9 @@ class NovelContentBody extends HookWidget {
                             'novel_vertical_${workId}_$episode',
                           ),
                           highlight: tategakiHighlight,
+                          controller: nav?.tategakiController,
+                          onVisibleElementChanged:
+                              nav?.onVisibleTategakiElement,
                           // 列の高さを上限までに抑える（上詰め）
                           height: clampLineExtent(
                             constraints.maxHeight,
@@ -287,6 +303,7 @@ class NovelContentBody extends HookWidget {
               key: PageStorageKey<String>(
                 'novel_horizontal_${workId}_$episode',
               ),
+              controller: nav?.horizontalController,
               padding: horizontalModePadding,
               // 行の幅を上限までに抑え、画面の中央に置く
               child: Align(

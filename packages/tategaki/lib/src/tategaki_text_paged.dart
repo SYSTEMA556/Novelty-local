@@ -31,6 +31,7 @@ class TategakiTextPaged extends StatefulWidget {
     this.controller,
     this.highlight,
     this.followHighlight = true,
+    this.onPageCountChanged,
     super.key,
   });
 
@@ -57,6 +58,9 @@ class TategakiTextPaged extends StatefulWidget {
 
   /// [highlight] が別のページに移ったら自動でページをめくるか
   final bool followHighlight;
+
+  /// ページ分割が終わったとき、総ページ数を知らせる
+  final ValueChanged<int>? onPageCountChanged;
 
   @override
   State<TategakiTextPaged> createState() => _TategakiTextPagedState();
@@ -174,6 +178,12 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
         maxWidth: availableWidth,
         height: availableHeight,
       );
+
+      // ビルド中に親の状態を変えないよう、描画後に知らせる
+      final count = _pages!.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onPageCountChanged?.call(count);
+      });
     }
 
     final pages = _pages!;

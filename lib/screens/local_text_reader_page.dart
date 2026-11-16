@@ -5,10 +5,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
+import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
@@ -142,6 +144,17 @@ class LocalTextReaderPage extends HookConsumerWidget {
     }, [readAloud, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
     final speaking = readAloud.isActive ? readAloud.currentSegment : null;
 
+    // 読み上げ中（一時停止中を含む）は画面を消さない
+    useEffect(() {
+      unawaited(_setWakelock(enabled: readAloud.isActive));
+      return null;
+    }, [readAloud.isActive]);
+    useEffect(() => () => unawaited(_setWakelock(enabled: false)), const []);
+
+    // 全体のどこにいるかの表示とシークバー
+    final navigation = useMemoized(ReaderNavigation.new);
+    useEffect(() => navigation.dispose, [navigation]);
+
     Widget body = NovelContentBody(
       workId: workId ?? 'local:$title',
       episode: 1,
@@ -149,6 +162,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
       content: AsyncData(elements),
       highlightStart: speaking?.start,
       highlightEnd: speaking?.end,
+      navigation: navigation,
     );
 
     final id = workId;
@@ -189,7 +203,20 @@ class LocalTextReaderPage extends HookConsumerWidget {
         onTap: () => isAppBarVisible.value = !isAppBarVisible.value,
         child: Stack(
           children: [
-            SafeArea(top: !isAppBarVisible.value, child: body),
+            SafeArea(
+              top: !isAppBarVisible.value,
+              // 本文に重ならないよう、下にページ表示・シークバーの場所を取る
+              child: Column(
+                children: [
+                  Expanded(child: body),
+                  _PositionBar(
+                    navigation: navigation,
+                    isVertical: isVertical,
+                    isPageFlip: settingsValue?.isPageFlip ?? false,
+                  ),
+                ],
+              ),
+            ),
             // 縦書きモード時、ホームジェスチャーとの競合を防ぐ
             if (isVertical) const GestureShield(),
             // 読み上げ中（一時停止中を含む）は操作ボタンを出す
@@ -197,7 +224,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: 16,
+                bottom: _PositionBar.height + 8,
                 child: SafeArea(
                   top: false,
                   child: _ReadAloudBar(controller: readAloud),
@@ -273,6 +300,98 @@ class LocalTextReaderPage extends HookConsumerWidget {
     );
     if (choice == null) return;
     await controller.playFrom(choice);
+  }
+}
+
+/// 画面を消さない設定を切り替える（失敗しても読書は続けられるため無視する）。
+Future<void> _setWakelock({required bool enabled}) async {
+  try {
+    await WakelockPlus.toggle(enable: enabled);
+  } on Object catch (e) {
+    debugPrint('Failed to toggle wakelock: $e');
+  }
+}
+
+/// 本文の下に出す、今のページ（位置）とシークバー。
+class _PositionBar extends HookWidget {
+  const _PositionBar({
+    required this.navigation,
+    required this.isVertical,
+    required this.isPageFlip,
+  });
+
+  /// バーの高さ。
+  static const double height = 48;
+
+  final ReaderNavigation navigation;
+  final bool isVertical;
+  final bool isPageFlip;
+
+  @override
+  Widget build(BuildContext context) {
+    final paged = isVertical && isPageFlip;
+    final page = useValueListenable(navigation.currentPage);
+    final pageCount = useValueListenable(navigation.pageCount);
+    final progress = useValueListenable(navigation.progress);
+    // 指で動かしている間の値（離したときに移動する）
+    final dragging = useState<double?>(null);
+
+    final double max;
+    final double value;
+    final String label;
+    if (paged) {
+      max = pageCount > 1 ? (pageCount - 1).toDouble() : 1;
+      final current = (dragging.value ?? page.toDouble()).clamp(0.0, max);
+      value = current;
+      label = pageCount == 0
+          ? ''
+          : '${current.round() + 1} / $pageCount';
+    } else {
+      max = 1;
+      value = (dragging.value ?? progress).clamp(0.0, 1.0);
+      label = '${(value * 100).round()}%';
+    }
+    final enabled = !paged || pageCount > 1;
+
+    return SizedBox(
+      height: height,
+      child: Row(
+        children: [
+          const SizedBox(width: 8),
+          Expanded(
+            // 縦書きは右から左へ読み進めるため、シークバーも右から左にする
+            child: Directionality(
+              textDirection: isVertical ? TextDirection.rtl : TextDirection.ltr,
+              child: Slider(
+                value: value,
+                max: max,
+                divisions: paged && pageCount > 1 ? pageCount - 1 : null,
+                label: label,
+                onChanged: enabled ? (v) => dragging.value = v : null,
+                onChangeEnd: enabled
+                    ? (v) {
+                        dragging.value = null;
+                        if (paged) {
+                          navigation.jumpToPage(v.round());
+                        } else {
+                          navigation.seek(v, isVertical: isVertical);
+                        }
+                      }
+                    : null,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

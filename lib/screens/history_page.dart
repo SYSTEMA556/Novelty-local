@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:novelty/database/database.dart';
 import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/router/router.dart';
+import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/utils/time_format.dart';
 
 /// "履歴"ページのウィジェット。
@@ -16,11 +17,22 @@ class HistoryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final groupedHistoryAsync = ref.watch(groupedHistoryProvider);
 
-    return Scaffold(
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
       appBar: AppBar(
         title: const Text('履歴'),
+        // Web小説とローカル作品の履歴をタブで切り替える
+        bottom: const TabBar(
+          tabs: [
+            Tab(text: 'Web小説'),
+            Tab(text: 'ローカル'),
+          ],
+        ),
       ),
-      body: groupedHistoryAsync.when(
+      body: TabBarView(
+        children: [
+      groupedHistoryAsync.when(
         data: (historyGroups) {
           if (historyGroups.isEmpty) {
             return const Center(child: Text('履歴がありません。'));
@@ -111,6 +123,10 @@ class HistoryPage extends ConsumerWidget {
         },
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (err, stack) => Center(child: Text('Error: $err')),
+      ),
+          const LocalReadingHistoryList(allowDelete: true),
+        ],
+      ),
       ),
     );
   }

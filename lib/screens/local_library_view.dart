@@ -657,6 +657,7 @@ class LocalWorkTile extends ConsumerWidget {
     this.onLongPress,
     this.showLastRead = false,
     this.showAuthor = true,
+    this.trailing,
     super.key,
   });
 
@@ -677,6 +678,9 @@ class LocalWorkTile extends ConsumerWidget {
 
   /// 作者名を表示するか（作者別の画面では不要）。
   final bool showAuthor;
+
+  /// 右端に置くウィジェット（削除ボタンなど）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -708,6 +712,7 @@ class LocalWorkTile extends ConsumerWidget {
           ],
         ],
       ),
+      trailing: trailing,
       onTap: onTap,
       onLongPress: onLongPress,
     );
