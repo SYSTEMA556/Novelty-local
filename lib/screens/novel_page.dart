@@ -123,6 +123,8 @@ class NovelPage extends HookConsumerWidget {
         return settings.when(
           data: (settings) {
             return Scaffold(
+              // 本文の色調に合わせて、余白の背景も同じ色にする
+              backgroundColor: settings.colorTheme.background,
               appBar: isAppBarVisible.value
                   ? AppBar(
                       leading: IconButton(
@@ -184,6 +186,26 @@ class NovelPage extends HookConsumerWidget {
                             episode: episodeNum,
                             revised: revisedDate,
                             isAppBarVisible: isAppBarVisible.value,
+                            // 中央タップでバーの表示を切り替え、
+                            // 端のタップはページボタンにする
+                            onMenuTap: () =>
+                                isAppBarVisible.value = !isAppBarVisible.value,
+                            // 話の最後（最初）でさらに進む（戻る）と前後の話へ
+                            onOverflow: (direction) => unawaited(
+                              direction > 0
+                                  ? pageController.nextPage(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      curve: Curves.easeOut,
+                                    )
+                                  : pageController.previousPage(
+                                      duration: const Duration(
+                                        milliseconds: 300,
+                                      ),
+                                      curve: Curves.easeOut,
+                                    ),
+                            ),
                           ),
                         );
                       },

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:novelty/repositories/preferences_repository.dart';
+import 'package:novelty/utils/reader_appearance.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'settings_provider.g.dart';
@@ -20,6 +21,17 @@ class AppSettings {
     this.maxLineChars = 0,
     this.ttsRate = 0.5,
     this.ttsPitch = 1.0,
+    this.colorTheme = ReaderColorTheme.system,
+    this.tapZoneEnabled = false,
+    this.tapZoneLayout = TapZoneLayout.sides,
+    this.tapZoneSize = 30,
+    this.tapZoneReversed = false,
+    this.tapZoneDisablePrevious = false,
+    this.tapZoneGuideOpacity = 0,
+    this.localGridEnabled = false,
+    this.localGridColumns = 3,
+    this.localGridShowNames = true,
+    this.localGridSquare = false,
   });
 
   /// テーマモード (system, light, dark)。
@@ -64,6 +76,49 @@ class AppSettings {
   /// 読み上げの声の高さ（0.5〜2.0。1.0 が標準）。
   final double ttsPitch;
 
+  /// 本文の色調。
+  final ReaderColorTheme colorTheme;
+
+  /// ページボタン（画面の端をタップしてページ送り）を使うか。
+  final bool tapZoneEnabled;
+
+  /// ページボタンの配置。
+  final TapZoneLayout tapZoneLayout;
+
+  /// ページボタンの帯の太さ（%）。
+  final int tapZoneSize;
+
+  /// ページボタンの次へ／前へを入れ替えるか。
+  final bool tapZoneReversed;
+
+  /// ページボタンの「前へ」を無効にするか。
+  final bool tapZoneDisablePrevious;
+
+  /// ページボタンの領域を本文の上に薄く表示する濃さ（%。0 で非表示）。
+  final int tapZoneGuideOpacity;
+
+  /// ローカル作品の一覧をグリッドで表示するか。
+  final bool localGridEnabled;
+
+  /// グリッドの列数。
+  final int localGridColumns;
+
+  /// グリッドに名前を表示するか。
+  final bool localGridShowNames;
+
+  /// グリッドの各マスを正方形にするか。
+  final bool localGridSquare;
+
+  /// ページボタンの設定（使わない場合は null）。
+  TapZoneConfig? get tapZoneConfig => tapZoneEnabled
+      ? TapZoneConfig(
+          layout: tapZoneLayout,
+          sizePercent: tapZoneSize,
+          reversed: tapZoneReversed,
+          disablePrevious: tapZoneDisablePrevious,
+        )
+      : null;
+
   /// 設定をコピーするメソッド。
   AppSettings copyWith({
     ThemeMode? themeMode,
@@ -77,6 +132,17 @@ class AppSettings {
     int? maxLineChars,
     double? ttsRate,
     double? ttsPitch,
+    ReaderColorTheme? colorTheme,
+    bool? tapZoneEnabled,
+    TapZoneLayout? tapZoneLayout,
+    int? tapZoneSize,
+    bool? tapZoneReversed,
+    bool? tapZoneDisablePrevious,
+    int? tapZoneGuideOpacity,
+    bool? localGridEnabled,
+    int? localGridColumns,
+    bool? localGridShowNames,
+    bool? localGridSquare,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -90,6 +156,18 @@ class AppSettings {
       maxLineChars: maxLineChars ?? this.maxLineChars,
       ttsRate: ttsRate ?? this.ttsRate,
       ttsPitch: ttsPitch ?? this.ttsPitch,
+      colorTheme: colorTheme ?? this.colorTheme,
+      tapZoneEnabled: tapZoneEnabled ?? this.tapZoneEnabled,
+      tapZoneLayout: tapZoneLayout ?? this.tapZoneLayout,
+      tapZoneSize: tapZoneSize ?? this.tapZoneSize,
+      tapZoneReversed: tapZoneReversed ?? this.tapZoneReversed,
+      tapZoneDisablePrevious:
+          tapZoneDisablePrevious ?? this.tapZoneDisablePrevious,
+      tapZoneGuideOpacity: tapZoneGuideOpacity ?? this.tapZoneGuideOpacity,
+      localGridEnabled: localGridEnabled ?? this.localGridEnabled,
+      localGridColumns: localGridColumns ?? this.localGridColumns,
+      localGridShowNames: localGridShowNames ?? this.localGridShowNames,
+      localGridSquare: localGridSquare ?? this.localGridSquare,
     );
   }
 }
@@ -108,6 +186,17 @@ class Settings extends _$Settings {
   static const _maxLineCharsKey = 'max_line_chars';
   static const _ttsRateKey = 'tts_rate';
   static const _ttsPitchKey = 'tts_pitch';
+  static const _colorThemeKey = 'reader_color_theme';
+  static const _tapZoneEnabledKey = 'tap_zone_enabled';
+  static const _tapZoneLayoutKey = 'tap_zone_layout';
+  static const _tapZoneSizeKey = 'tap_zone_size';
+  static const _tapZoneReversedKey = 'tap_zone_reversed';
+  static const _tapZoneDisablePreviousKey = 'tap_zone_disable_previous';
+  static const _tapZoneGuideOpacityKey = 'tap_zone_guide_opacity';
+  static const _localGridEnabledKey = 'local_grid_enabled';
+  static const _localGridColumnsKey = 'local_grid_columns';
+  static const _localGridShowNamesKey = 'local_grid_show_names';
+  static const _localGridSquareKey = 'local_grid_square';
 
   /// 1行の文字数の上限として選べる最小値。
   static const int minLineChars = 15;
@@ -148,6 +237,24 @@ class Settings extends _$Settings {
     final maxLineChars = await repo.getInt(_maxLineCharsKey) ?? 0;
     final ttsRate = await repo.getDouble(_ttsRateKey) ?? 0.5;
     final ttsPitch = await repo.getDouble(_ttsPitchKey) ?? 1.0;
+    final colorTheme = ReaderColorTheme.fromName(
+      await repo.getString(_colorThemeKey),
+    );
+    final tapZoneEnabled = await repo.getBool(_tapZoneEnabledKey) ?? false;
+    final tapZoneLayout = TapZoneLayout.fromName(
+      await repo.getString(_tapZoneLayoutKey),
+    );
+    final tapZoneSize = await repo.getInt(_tapZoneSizeKey) ?? 30;
+    final tapZoneReversed = await repo.getBool(_tapZoneReversedKey) ?? false;
+    final tapZoneDisablePrevious =
+        await repo.getBool(_tapZoneDisablePreviousKey) ?? false;
+    final tapZoneGuideOpacity =
+        await repo.getInt(_tapZoneGuideOpacityKey) ?? 0;
+    final localGridEnabled = await repo.getBool(_localGridEnabledKey) ?? false;
+    final localGridColumns = await repo.getInt(_localGridColumnsKey) ?? 3;
+    final localGridShowNames =
+        await repo.getBool(_localGridShowNamesKey) ?? true;
+    final localGridSquare = await repo.getBool(_localGridSquareKey) ?? false;
 
     return AppSettings(
       themeMode: ThemeMode.values[themeModeIndex],
@@ -161,8 +268,96 @@ class Settings extends _$Settings {
       maxLineChars: maxLineChars,
       ttsRate: ttsRate,
       ttsPitch: ttsPitch,
+      colorTheme: colorTheme,
+      tapZoneEnabled: tapZoneEnabled,
+      tapZoneLayout: tapZoneLayout,
+      tapZoneSize: tapZoneSize,
+      tapZoneReversed: tapZoneReversed,
+      tapZoneDisablePrevious: tapZoneDisablePrevious,
+      tapZoneGuideOpacity: tapZoneGuideOpacity,
+      localGridEnabled: localGridEnabled,
+      localGridColumns: localGridColumns,
+      localGridShowNames: localGridShowNames,
+      localGridSquare: localGridSquare,
     );
   }
+
+  /// 設定を1つ保存し、状態に反映する共通処理。
+  Future<void> _save(
+    String label,
+    Future<bool> Function(PreferencesRepository repo) write,
+    AppSettings Function(AppSettings current) apply,
+  ) async {
+    if (!state.hasValue) {
+      throw StateError('Settings are not loaded');
+    }
+    try {
+      final repo = await _repo;
+      if (!await write(repo)) {
+        throw Exception('Failed to save $label setting');
+      }
+      state = AsyncData(apply(state.value!));
+    } catch (e, stackTrace) {
+      debugPrint('Error saving $label setting: $e\nStack trace: $stackTrace');
+      state = AsyncError(e, stackTrace);
+      rethrow;
+    }
+  }
+
+  /// 本文の色調を設定する。
+  Future<void> setColorTheme(ReaderColorTheme theme) => _save(
+    'color theme',
+    (repo) => repo.setString(_colorThemeKey, theme.name),
+    (s) => s.copyWith(colorTheme: theme),
+  );
+
+  /// ページボタンの設定をまとめて保存する。
+  Future<void> setTapZone({
+    required bool enabled,
+    required TapZoneLayout layout,
+    required int size,
+    required bool reversed,
+    required bool disablePrevious,
+    required int guideOpacity,
+  }) => _save(
+    'tap zone',
+    (repo) async =>
+        await repo.setBool(_tapZoneEnabledKey, enabled) &&
+        await repo.setString(_tapZoneLayoutKey, layout.name) &&
+        await repo.setInt(_tapZoneSizeKey, size) &&
+        await repo.setBool(_tapZoneReversedKey, reversed) &&
+        await repo.setBool(_tapZoneDisablePreviousKey, disablePrevious) &&
+        await repo.setInt(_tapZoneGuideOpacityKey, guideOpacity),
+    (s) => s.copyWith(
+      tapZoneEnabled: enabled,
+      tapZoneLayout: layout,
+      tapZoneSize: size,
+      tapZoneReversed: reversed,
+      tapZoneDisablePrevious: disablePrevious,
+      tapZoneGuideOpacity: guideOpacity,
+    ),
+  );
+
+  /// ローカル作品のグリッド表示の設定をまとめて保存する。
+  Future<void> setLocalGrid({
+    required bool enabled,
+    required int columns,
+    required bool showNames,
+    required bool square,
+  }) => _save(
+    'local grid',
+    (repo) async =>
+        await repo.setBool(_localGridEnabledKey, enabled) &&
+        await repo.setInt(_localGridColumnsKey, columns) &&
+        await repo.setBool(_localGridShowNamesKey, showNames) &&
+        await repo.setBool(_localGridSquareKey, square),
+    (s) => s.copyWith(
+      localGridEnabled: enabled,
+      localGridColumns: columns,
+      localGridShowNames: showNames,
+      localGridSquare: square,
+    ),
+  );
 
   /// 読み上げの速さ・声の高さを設定するメソッド。
   Future<void> setTtsVoice({double? rate, double? pitch}) async {

@@ -13,6 +13,7 @@ import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
 import 'package:novelty/screens/local_meta_rules_page.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
+import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/indexed_list.dart';
 
 /// ローカル作品の並び順。
@@ -203,6 +204,14 @@ class LocalLibraryView extends HookConsumerWidget {
       [allWorks, query.value, profiles],
     );
     final isAuthorMode = viewMode.value == LocalViewMode.authors;
+    final appSettings = ref.watch(settingsProvider).value;
+    final grid = appSettings != null && appSettings.localGridEnabled
+        ? GridOptions(
+            columns: appSettings.localGridColumns.clamp(2, 6),
+            showNames: appSettings.localGridShowNames,
+            square: appSettings.localGridSquare,
+          )
+        : null;
 
     final toolbar = Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
@@ -260,9 +269,12 @@ class LocalLibraryView extends HookConsumerWidget {
                   );
                 case 'redetect':
                   unawaited(runRedetectAll(context, ref));
+                case 'display':
+                  unawaited(showLocalDisplayDialog(context, ref));
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'display', child: Text('表示の設定（リスト／グリッド）')),
               PopupMenuItem(value: 'rules', child: Text('作者の読み取りルール')),
               PopupMenuItem(value: 'redetect', child: Text('全作品の作者を再判定')),
             ],
@@ -334,7 +346,28 @@ class LocalLibraryView extends HookConsumerWidget {
                   ),
                   Expanded(
                     child: isAuthorMode
-                        ? _AuthorList(groups: groups, positions: positions)
+                        ? _AuthorList(
+                            groups: groups,
+                            positions: positions,
+                            grid: grid,
+                          )
+                        : grid != null
+                        ? GridIndexedList<LocalWork>(
+                            items: works,
+                            options: grid,
+                            showIndex: sort.value == LocalSort.title,
+                            labelOf: (work) => KanaIndex.labelOf(work.title),
+                            tileBuilder: (context, work) => _WorkGridTile(
+                              work: work,
+                              position: positions[work.id],
+                              showName: grid.showNames,
+                              onTap: () =>
+                                  unawaited(openLocalWork(context, work)),
+                              onLongPress: () => unawaited(
+                                showLocalWorkActions(context, ref, work),
+                              ),
+                            ),
+                          )
                         : IndexedList(
                             itemCount: works.length,
                             // 見出しが意味を持つのはタイトル順のときだけ
@@ -368,13 +401,50 @@ class LocalLibraryView extends HookConsumerWidget {
 
 /// 作者ごとの一覧。
 class _AuthorList extends ConsumerWidget {
-  const _AuthorList({required this.groups, required this.positions});
+  const _AuthorList({
+    required this.groups,
+    required this.positions,
+    this.grid,
+  });
 
   final List<AuthorGroup> groups;
   final Map<String, ReadingPosition> positions;
+  final GridOptions? grid;
+
+  void _open(BuildContext context, AuthorGroup group) {
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => LocalAuthorWorksPage(
+            authorKey: group.key,
+            authorName: group.name,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final gridOptions = grid;
+    if (gridOptions != null) {
+      return GridIndexedList<AuthorGroup>(
+        items: groups,
+        options: gridOptions,
+        labelOf: (group) => group.indexLabel,
+        tileBuilder: (context, group) => _GridTile(
+          icon: group.isUnknown ? Icons.help_outline : Icons.person_outline,
+          title: gridOptions.showNames ? group.name : null,
+          subtitle: gridOptions.showNames
+              ? '${group.works.length} 作品'
+              : null,
+          onTap: () => _open(context, group),
+          onLongPress: group.isUnknown
+              ? null
+              : () => unawaited(showEditAuthorDialog(context, ref, group)),
+        ),
+      );
+    }
     return IndexedList(
       itemCount: groups.length,
       labelOf: (index) => groups[index].indexLabel,
@@ -409,6 +479,298 @@ class _AuthorList extends ConsumerWidget {
               : () => unawaited(showEditAuthorDialog(context, ref, group)),
         );
       },
+    );
+  }
+}
+
+/// グリッド表示の設定。
+class GridOptions {
+  /// コンストラクタ。
+  const GridOptions({
+    required this.columns,
+    required this.showNames,
+    required this.square,
+  });
+
+  /// 列数。
+  final int columns;
+
+  /// 名前を表示するか。
+  final bool showNames;
+
+  /// 各マスを正方形にするか。
+  final bool square;
+}
+
+/// 右端のインデックス付きのグリッド。
+///
+/// インデックスで飛べるよう、1行ずつを [IndexedList] の項目として並べる
+/// （見出しが行の途中から始まる場合は、その行へ飛ぶ）。
+class GridIndexedList<T> extends StatelessWidget {
+  /// コンストラクタ。
+  const GridIndexedList({
+    required this.items,
+    required this.options,
+    required this.labelOf,
+    required this.tileBuilder,
+    this.showIndex = true,
+    super.key,
+  });
+
+  /// 並べる項目。
+  final List<T> items;
+
+  /// グリッドの設定。
+  final GridOptions options;
+
+  /// 項目の見出し。
+  final String Function(T item) labelOf;
+
+  /// マスを作る。
+  final Widget Function(BuildContext context, T item) tileBuilder;
+
+  /// インデックスを表示するか。
+  final bool showIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    final columns = options.columns;
+    final rowCount = (items.length + columns - 1) ~/ columns;
+    return IndexedList(
+      itemCount: rowCount,
+      showIndex: showIndex,
+      labelOf: (row) => labelOf(items[row * columns]),
+      itemBuilder: (context, row) {
+        final start = row * columns;
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var c = 0; c < columns; c++)
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: start + c < items.length
+                          ? (options.square
+                                ? AspectRatio(
+                                    aspectRatio: 1,
+                                    child: tileBuilder(
+                                      context,
+                                      items[start + c],
+                                    ),
+                                  )
+                                : tileBuilder(context, items[start + c]))
+                          : const SizedBox.shrink(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// グリッドの1マス（アイコン＋名前）。
+class _GridTile extends StatelessWidget {
+  const _GridTile({
+    required this.icon,
+    required this.onTap,
+    this.title,
+    this.subtitle,
+    this.iconColor,
+    this.progress,
+    this.onLongPress,
+  });
+
+  final IconData icon;
+  final Color? iconColor;
+  final String? title;
+  final String? subtitle;
+  final double? progress;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final titleText = title;
+    final subtitleText = subtitle;
+    final progressValue = progress;
+    return Card(
+      margin: EdgeInsets.zero,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        onLongPress: onLongPress,
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 32, color: iconColor),
+              if (titleText != null) ...[
+                const SizedBox(height: 6),
+                Text(
+                  titleText,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+              if (subtitleText != null)
+                Text(
+                  subtitleText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              if (progressValue != null) ...[
+                const SizedBox(height: 4),
+                LinearProgressIndicator(value: progressValue),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 作品のグリッドのマス。
+class _WorkGridTile extends ConsumerWidget {
+  const _WorkGridTile({
+    required this.work,
+    required this.position,
+    required this.showName,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  final LocalWork work;
+  final ReadingPosition? position;
+  final bool showName;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profiles =
+        ref.watch(authorProfilesProvider).value ?? AuthorProfiles.empty;
+    final pos = position;
+    return _GridTile(
+      icon: pos == null ? Icons.description_outlined : Icons.bookmark,
+      iconColor: pos == null ? null : Theme.of(context).colorScheme.primary,
+      title: showName ? work.title : null,
+      subtitle: showName ? profiles.effectiveName(work.author) : null,
+      progress: pos?.progress,
+      onTap: onTap,
+      onLongPress: onLongPress,
+    );
+  }
+}
+
+/// ローカル作品一覧の表示設定ダイアログ（リスト／グリッド、列数など）。
+Future<void> showLocalDisplayDialog(BuildContext context, WidgetRef ref) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => const _LocalDisplayDialog(),
+  );
+}
+
+class _LocalDisplayDialog extends HookConsumerWidget {
+  const _LocalDisplayDialog();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final current = ref.read(settingsProvider).value;
+    final grid = useState(current?.localGridEnabled ?? false);
+    final columns = useState((current?.localGridColumns ?? 3).clamp(2, 6));
+    final showNames = useState(current?.localGridShowNames ?? true);
+    final square = useState(current?.localGridSquare ?? false);
+
+    return AlertDialog(
+      title: const Text('表示の設定'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SegmentedButton<bool>(
+              segments: const [
+                ButtonSegment(
+                  value: false,
+                  label: Text('リスト'),
+                  icon: Icon(Icons.view_list),
+                ),
+                ButtonSegment(
+                  value: true,
+                  label: Text('グリッド'),
+                  icon: Icon(Icons.grid_view),
+                ),
+              ],
+              selected: {grid.value},
+              showSelectedIcon: false,
+              onSelectionChanged: (v) => grid.value = v.first,
+            ),
+            if (grid.value) ...[
+              const SizedBox(height: 12),
+              Text('列数: ${columns.value}'),
+              Slider(
+                value: columns.value.toDouble(),
+                min: 2,
+                max: 6,
+                divisions: 4,
+                label: '${columns.value}',
+                onChanged: (v) => columns.value = v.round(),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('名前を表示'),
+                value: showNames.value,
+                onChanged: (v) => showNames.value = v ?? true,
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('正方形'),
+                value: square.value,
+                onChanged: (v) => square.value = v ?? false,
+              ),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () async {
+            Navigator.pop(context);
+            try {
+              await ref
+                  .read(settingsProvider.notifier)
+                  .setLocalGrid(
+                    enabled: grid.value,
+                    columns: columns.value,
+                    showNames: showNames.value,
+                    square: square.value,
+                  );
+            } on Exception catch (e) {
+              debugPrint('Failed to save grid settings: $e');
+            }
+          },
+          child: const Text('確認'),
+        ),
+      ],
     );
   }
 }

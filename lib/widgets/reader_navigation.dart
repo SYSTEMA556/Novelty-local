@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:tategaki/tategaki.dart';
 
@@ -54,6 +56,48 @@ class ReaderNavigation {
     progress.value = total <= 1
         ? 0
         : (elementIndex / (total - 1)).clamp(0, 1).toDouble();
+  }
+
+  /// 1ページ（スクロール表示では画面1枚分）進む（[direction] が 1）か戻る（-1）。
+  ///
+  /// 動けたら true、すでに端にいて動けなければ false を返す
+  /// （Web小説では false のとき前後の話へ移る）。
+  bool move(
+    int direction, {
+    required bool isVertical,
+    required bool isPageFlip,
+  }) {
+    if (isVertical && isPageFlip) {
+      if (!pageController.hasClients) return false;
+      final target = currentPage.value + direction;
+      if (target < 0 || (pageCount.value > 0 && target >= pageCount.value)) {
+        return false;
+      }
+      unawaited(
+        pageController.animateToPage(
+          target,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        ),
+      );
+      return true;
+    }
+    if (isVertical) return tategakiController.scrollByPage(direction);
+
+    if (!horizontalController.hasClients) return false;
+    final position = horizontalController.position;
+    final target = (position.pixels +
+            position.viewportDimension * 0.9 * direction)
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((target - position.pixels).abs() < 1) return false;
+    unawaited(
+      horizontalController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      ),
+    );
+    return true;
   }
 
   /// ページ [page] へ移る。

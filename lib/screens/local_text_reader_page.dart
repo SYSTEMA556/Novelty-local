@@ -163,6 +163,8 @@ class LocalTextReaderPage extends HookConsumerWidget {
       highlightStart: speaking?.start,
       highlightEnd: speaking?.end,
       navigation: navigation,
+      // 中央タップでバーの表示を切り替え、端のタップはページボタンにする
+      onMenuTap: () => isAppBarVisible.value = !isAppBarVisible.value,
     );
 
     final id = workId;
@@ -171,6 +173,8 @@ class LocalTextReaderPage extends HookConsumerWidget {
     }
 
     return Scaffold(
+      // 本文の色調に合わせて、余白やバーの背景も同じ色にする
+      backgroundColor: settingsValue?.colorTheme.background,
       appBar: isAppBarVisible.value
           ? AppBar(
               title: Text(title, overflow: TextOverflow.ellipsis),
@@ -213,6 +217,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
                     navigation: navigation,
                     isVertical: isVertical,
                     isPageFlip: settingsValue?.isPageFlip ?? false,
+                    textColor: settingsValue?.colorTheme.text,
                   ),
                 ],
               ),
@@ -318,6 +323,7 @@ class _PositionBar extends HookWidget {
     required this.navigation,
     required this.isVertical,
     required this.isPageFlip,
+    this.textColor,
   });
 
   /// バーの高さ。
@@ -326,6 +332,9 @@ class _PositionBar extends HookWidget {
   final ReaderNavigation navigation;
   final bool isVertical;
   final bool isPageFlip;
+
+  /// 色調の文字色（端末に合わせる場合は null）。
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
@@ -386,7 +395,9 @@ class _PositionBar extends HookWidget {
             child: Text(
               label,
               textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.labelMedium,
+              style: Theme.of(
+                context,
+              ).textTheme.labelMedium?.copyWith(color: textColor),
             ),
           ),
         ],

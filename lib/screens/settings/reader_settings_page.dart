@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:novelty/utils/reader_appearance.dart';
 import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/tap_zone_guide.dart';
 
 /// 閲覧設定ページ
 class ReaderSettingsPage extends ConsumerWidget {
@@ -21,6 +23,10 @@ class ReaderSettingsPage extends ConsumerWidget {
             _buildFontSection(context, ref, data),
             const Divider(),
             _buildLayoutSection(context, ref, data),
+            const Divider(),
+            _buildColorSection(context, ref, data),
+            const Divider(),
+            _buildTapZoneSection(context, ref, data),
             const Divider(),
             _buildReadAloudSection(context, ref, data),
           ],
@@ -333,6 +339,242 @@ class ReaderSettingsPage extends ConsumerWidget {
             '（音声エンジン）に従います。',
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+          color: Theme.of(context).colorScheme.primary,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  void _showSaveError(BuildContext context, String what) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$whatの保存に失敗しました'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  /// 色調（背景色と文字色）。
+  Widget _buildColorSection(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    Future<void> select(ReaderColorTheme theme) async {
+      try {
+        await ref.read(settingsProvider.notifier).setColorTheme(theme);
+      } on Exception catch (e, stackTrace) {
+        debugPrint('Failed to save color theme: $e\n$stackTrace');
+        if (context.mounted) _showSaveError(context, '色調');
+      }
+    }
+
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context, '色調'),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final theme in ReaderColorTheme.values)
+                InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => select(theme),
+                  child: Column(
+                    children: [
+                      // 見本：その色調で「あ」を表示する
+                      Container(
+                        width: 56,
+                        height: 56,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: theme.background ?? scheme.surface,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: settings.colorTheme == theme
+                                ? scheme.primary
+                                : scheme.outlineVariant,
+                            width: settings.colorTheme == theme ? 3 : 1,
+                          ),
+                        ),
+                        child: Text(
+                          'あ',
+                          style: TextStyle(
+                            fontSize: 22,
+                            color: theme.text ?? scheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        theme.label,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  /// ページボタン（画面の端をタップしてページ送り）。
+  Widget _buildTapZoneSection(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    Future<void> save({
+      bool? enabled,
+      TapZoneLayout? layout,
+      int? size,
+      bool? reversed,
+      bool? disablePrevious,
+      int? guideOpacity,
+    }) async {
+      try {
+        await ref
+            .read(settingsProvider.notifier)
+            .setTapZone(
+              enabled: enabled ?? settings.tapZoneEnabled,
+              layout: layout ?? settings.tapZoneLayout,
+              size: size ?? settings.tapZoneSize,
+              reversed: reversed ?? settings.tapZoneReversed,
+              disablePrevious:
+                  disablePrevious ?? settings.tapZoneDisablePrevious,
+              guideOpacity: guideOpacity ?? settings.tapZoneGuideOpacity,
+            );
+      } on Exception catch (e, stackTrace) {
+        debugPrint('Failed to save tap zone: $e\n$stackTrace');
+        if (context.mounted) _showSaveError(context, 'ページボタン');
+      }
+    }
+
+    final enabled = settings.tapZoneEnabled;
+    final previewConfig = TapZoneConfig(
+      layout: settings.tapZoneLayout,
+      sizePercent: settings.tapZoneSize,
+      reversed: settings.tapZoneReversed,
+      disablePrevious: settings.tapZoneDisablePrevious,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle(context, 'ページボタン'),
+        SwitchListTile(
+          title: const Text('画面の端をタップしてページ送り'),
+          subtitle: const Text('中央のタップはこれまでどおりメニューを表示します'),
+          value: enabled,
+          onChanged: (value) => save(enabled: value),
+        ),
+        if (enabled) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 配置の選択
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final layout in TapZoneLayout.values)
+                        InkWell(
+                          onTap: () => save(layout: layout),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  settings.tapZoneLayout == layout
+                                      ? Icons.radio_button_checked
+                                      : Icons.radio_button_unchecked,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Flexible(child: Text(layout.label)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // 見本（縦書きなら縦書きの向きで表示する）
+                Container(
+                  width: 120,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  child: TapZoneGuide(
+                    config: previewConfig,
+                    isVertical: settings.isVertical,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          CheckboxListTile(
+            title: const Text('次へ・前へを入れ替える'),
+            value: settings.tapZoneReversed,
+            onChanged: (value) => save(reversed: value ?? false),
+          ),
+          CheckboxListTile(
+            title: const Text('「前へ」を無効にする'),
+            subtitle: const Text('その場所をタップするとメニューを表示します'),
+            value: settings.tapZoneDisablePrevious,
+            onChanged: (value) => save(disablePrevious: value ?? false),
+          ),
+          ListTile(
+            title: Text('ボタンの太さ: ${settings.tapZoneSize}%'),
+            subtitle: Slider(
+              value: settings.tapZoneSize.clamp(10, 45).toDouble(),
+              min: 10,
+              max: 45,
+              divisions: 35,
+              label: '${settings.tapZoneSize}%',
+              onChanged: (value) => save(size: value.round()),
+            ),
+          ),
+          ListTile(
+            title: Text(
+              settings.tapZoneGuideOpacity == 0
+                  ? '本文上の表示: なし'
+                  : '本文上の表示の濃さ: ${settings.tapZoneGuideOpacity}%',
+            ),
+            subtitle: Slider(
+              value: settings.tapZoneGuideOpacity.clamp(0, 60).toDouble(),
+              max: 60,
+              divisions: 12,
+              label: '${settings.tapZoneGuideOpacity}%',
+              onChanged: (value) => save(guideOpacity: value.round()),
+            ),
+          ),
+        ],
       ],
     );
   }

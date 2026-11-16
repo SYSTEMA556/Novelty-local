@@ -10,10 +10,12 @@ import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/font_family.dart';
 import 'package:novelty/utils/line_length.dart';
+import 'package:novelty/utils/reader_appearance.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/utils/tategaki_converter.dart';
 import 'package:novelty/widgets/novel_content_view.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
+import 'package:novelty/widgets/tap_zone_guide.dart';
 import 'package:tategaki/tategaki.dart';
 
 /// 小説のコンテンツを表示するウィジェット。
@@ -25,6 +27,8 @@ class NovelContent extends HookConsumerWidget {
     required this.episode,
     this.revised,
     this.isAppBarVisible = false,
+    this.onMenuTap,
+    this.onOverflow,
     super.key,
   });
 
@@ -47,6 +51,12 @@ class NovelContent extends HookConsumerWidget {
   /// `false` の場合、本文側で上部のセーフエリアを確保する。
   final bool isAppBarVisible;
 
+  /// 本文の中央をタップしたときの処理（ページボタンを有効にする）。
+  final VoidCallback? onMenuTap;
+
+  /// ページボタンで話の端を越えようとしたときの処理（1: 次の話、-1: 前の話）。
+  final ValueChanged<int>? onOverflow;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
@@ -67,6 +77,8 @@ class NovelContent extends HookConsumerWidget {
         episode: episode,
         settings: settings,
         content: contentAsync,
+        onMenuTap: onMenuTap,
+        onOverflow: onOverflow,
       ),
     );
   }
@@ -87,6 +99,8 @@ class NovelContentBody extends HookWidget {
     this.highlightStart,
     this.highlightEnd,
     this.navigation,
+    this.onMenuTap,
+    this.onOverflow,
     super.key,
   });
 
@@ -115,6 +129,15 @@ class NovelContentBody extends HookWidget {
 
   /// 全体のどこにいるかの表示・シークバーでの移動（使わなければ null）
   final ReaderNavigation? navigation;
+
+  /// 本文の中央（ページボタン以外）をタップしたときの処理。
+  ///
+  /// 指定するとページボタンが有効になる（読書画面で使う）。
+  final VoidCallback? onMenuTap;
+
+  /// ページボタンで端を越えて進もう（1）・戻ろう（-1）としたときの処理
+  /// （Web小説で前後の話へ移るのに使う）。
+  final ValueChanged<int>? onOverflow;
 
   @override
   Widget build(BuildContext context) {
@@ -168,10 +191,11 @@ class NovelContentBody extends HookWidget {
       [contentData, settingsData?.isRubyEnabled],
     );
     final tategakiElements = conversion?.elements;
-    final nav = navigation;
-    if (nav != null) {
-      nav.tategakiElementCount = tategakiElements?.length ?? 0;
-    }
+    // 外から渡されなければ自前で持つ（ページボタンでの移動に使う）
+    final ownNavigation = useMemoized(ReaderNavigation.new);
+    useEffect(() => ownNavigation.dispose, [ownNavigation]);
+    final nav = navigation ?? ownNavigation
+      ..tategakiElementCount = tategakiElements?.length ?? 0;
 
     // 読み上げ中の文などに付ける背景色
     final highlightColor = Theme.of(
@@ -191,12 +215,12 @@ class NovelContentBody extends HookWidget {
 
     return settings.when(
       data: (settingsData) {
-        return content.when(
+        final body = content.when(
           data: (contentData) {
             // 小説本文は固定のバンドルフォント(源暎こぶり明朝)を使用する
             final textStyle = TextStyle(
               fontSize: settingsData.fontSize,
-              color: textColor,
+              color: settingsData.colorTheme.text ?? textColor,
               fontFamily: novelBodyFontFamily,
               height: settingsData.lineHeight,
             );
@@ -253,10 +277,9 @@ class NovelContentBody extends HookWidget {
                         width: constraints.maxWidth,
                         height: constraints.maxHeight,
                         highlight: tategakiHighlight,
-                        controller: nav?.pageController,
-                        onPageCountChanged: nav == null
-                            ? null
-                            : (count) => nav.pageCount.value = count,
+                        controller: nav.pageController,
+                        onPageCountChanged: (count) =>
+                            nav.pageCount.value = count,
                         padding: verticalModePadding.copyWith(
                           bottom: verticalModePadding.bottom + extra,
                         ),
@@ -283,9 +306,8 @@ class NovelContentBody extends HookWidget {
                             'novel_vertical_${workId}_$episode',
                           ),
                           highlight: tategakiHighlight,
-                          controller: nav?.tategakiController,
-                          onVisibleElementChanged:
-                              nav?.onVisibleTategakiElement,
+                          controller: nav.tategakiController,
+                          onVisibleElementChanged: nav.onVisibleTategakiElement,
                           // 列の高さを上限までに抑える（上詰め）
                           height: clampLineExtent(
                             constraints.maxHeight,
@@ -303,7 +325,7 @@ class NovelContentBody extends HookWidget {
               key: PageStorageKey<String>(
                 'novel_horizontal_${workId}_$episode',
               ),
-              controller: nav?.horizontalController,
+              controller: nav.horizontalController,
               padding: horizontalModePadding,
               // 行の幅を上限までに抑え、画面の中央に置く
               child: Align(
@@ -334,9 +356,72 @@ class NovelContentBody extends HookWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (err, stack) => Center(child: Text('Error: $err')),
         );
+        return _decorate(settingsData, nav, body);
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (err, stack) => Center(child: Text('Error: $err')),
     );
+  }
+
+  /// 色調の背景と、ページボタン（タップでのページ送り）を付ける。
+  Widget _decorate(AppSettings settings, ReaderNavigation nav, Widget body) {
+    var result = body;
+    final menu = onMenuTap;
+    if (menu != null) {
+      final config = settings.tapZoneConfig;
+      final guideOpacity = settings.tapZoneGuideOpacity / 100;
+      result = LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest;
+          return GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTapUp: (details) {
+              final action =
+                  config?.actionAt(
+                    details.localPosition,
+                    size,
+                    isVertical: settings.isVertical,
+                  ) ??
+                  TapAction.menu;
+              switch (action) {
+                case TapAction.menu:
+                  menu();
+                case TapAction.next:
+                case TapAction.previous:
+                  final direction = action == TapAction.next ? 1 : -1;
+                  final moved = nav.move(
+                    direction,
+                    isVertical: settings.isVertical,
+                    isPageFlip: settings.isPageFlip,
+                  );
+                  if (!moved) onOverflow?.call(direction);
+              }
+            },
+            child: Stack(
+              children: [
+                Positioned.fill(child: body),
+                // ページボタンの場所を薄く示す（設定で濃さを 0 にすると非表示）
+                if (config != null && guideOpacity > 0)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: TapZoneGuide(
+                        config: config,
+                        isVertical: settings.isVertical,
+                        opacity: guideOpacity,
+                        showLabels: false,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      );
+    }
+    final background = settings.colorTheme.background;
+    if (background != null) {
+      result = ColoredBox(color: background, child: result);
+    }
+    return result;
   }
 }

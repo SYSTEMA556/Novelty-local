@@ -83,6 +83,7 @@ class _TategakiTextState extends State<TategakiText> {
   void initState() {
     super.initState();
     widget.controller?.addListener(_onControllerRequest);
+    widget.controller?.attachPageHandler(_scrollByPage);
     // 復元されたスクロール位置を、最初の描画後に知らせる
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _reportVisibleElement();
@@ -92,6 +93,30 @@ class _TategakiTextState extends State<TategakiText> {
   void _onControllerRequest() {
     final element = widget.controller?.takePendingElement();
     if (element != null) _revealElement(element, jump: true);
+  }
+
+  /// 画面1枚分（少し重ねて）スクロールする。端で動けなければ false
+  bool _scrollByPage(int direction) {
+    if (!_scrollController.hasClients) return false;
+    final position = _scrollController.position;
+    // 読み進める先の列を計算しておく（遅延計算のため）
+    if (direction > 0) {
+      _extendColumns(_currentEngine, notify: true);
+    }
+    final step = position.viewportDimension * 0.9;
+    final target = (position.pixels + step * direction).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    if ((target - position.pixels).abs() < 1) return false;
+    unawaited(
+      _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      ),
+    );
+    return true;
   }
 
   /// 画面の読み始め側にある要素の位置を知らせる
@@ -118,7 +143,9 @@ class _TategakiTextState extends State<TategakiText> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller?.removeListener(_onControllerRequest);
+      oldWidget.controller?.attachPageHandler(null);
       widget.controller?.addListener(_onControllerRequest);
+      widget.controller?.attachPageHandler(_scrollByPage);
     }
     final highlight = widget.highlight;
     if (widget.followHighlight &&
@@ -133,6 +160,7 @@ class _TategakiTextState extends State<TategakiText> {
   @override
   void dispose() {
     widget.controller?.removeListener(_onControllerRequest);
+    widget.controller?.attachPageHandler(null);
     _scrollController.dispose();
     super.dispose();
   }
