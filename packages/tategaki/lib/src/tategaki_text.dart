@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 
 import 'package:tategaki/src/element/tategaki_element.dart';
+import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/tategaki_column_engine.dart';
 import 'package:tategaki/src/layout/tategaki_layout.dart';
 import 'package:tategaki/src/painting/tategaki_column_painter.dart';
@@ -20,6 +23,8 @@ class TategakiText extends StatefulWidget {
   const TategakiText(
     this.elements, {
     required this.height,
+    this.highlight,
+    this.followHighlight = true,
     super.key,
   });
 
@@ -28,6 +33,12 @@ class TategakiText extends StatefulWidget {
 
   /// 列の高さ（必須）
   final double height;
+
+  /// 背景色を付ける範囲（読み上げ中の文など）
+  final TategakiHighlight? highlight;
+
+  /// [highlight] が画面外に出たら自動でスクロールするか
+  final bool followHighlight;
 
   @override
   State<TategakiText> createState() => _TategakiTextState();
@@ -53,6 +64,75 @@ class _TategakiTextState extends State<TategakiText> {
 
   /// スクロール末尾からこの距離に近づいたら追加計算する
   static const double _extendThreshold = 800;
+
+  /// ハイライトへの追従に使うスクロールコントローラー
+  /// （位置の保存・復元は従来どおり PageStorage が行う）
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(covariant TategakiText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final highlight = widget.highlight;
+    if (widget.followHighlight &&
+        highlight != null &&
+        highlight != oldWidget.highlight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _revealElement(highlight.start);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// 要素 [elementIndex] を含む列が見えていなければ、見える位置へ動かす
+  void _revealElement(int elementIndex) {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final engine = _currentEngine;
+    final columnIndex = engine.columnIndexOfElement(elementIndex);
+    if (columnIndex == null) {
+      return;
+    }
+    // その列の開始位置（列幅と列間の合計）
+    var start = 0.0;
+    for (var i = 0; i < columnIndex; i++) {
+      start += engine.columnAt(i).width + TategakiLayout.columnSpacing;
+    }
+    final columnWidth = engine.columnAt(columnIndex).width;
+
+    // ListView が列を表示できるよう、計算済みの列数を増やしておく
+    if (engine.computedColumnCount != _computedCount) {
+      setState(() => _computedCount = engine.computedColumnCount);
+    }
+
+    final position = _scrollController.position;
+    final visibleStart = position.pixels;
+    final visibleEnd = visibleStart + position.viewportDimension;
+    if (start >= visibleStart && start + columnWidth <= visibleEnd) {
+      return; // すでに見えている
+    }
+    // 読み進める方向に余裕を持たせ、画面の手前寄りに置く
+    final target = (start - position.viewportDimension * 0.1).clamp(
+      0.0,
+      double.infinity,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) return;
+      final max = _scrollController.position.maxScrollExtent;
+      unawaited(
+        _scrollController.animateTo(
+          target > max ? max : target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        ),
+      );
+    });
+  }
 
   /// 現在の入力に対応する列エンジンを返す
   TategakiColumnEngine get _currentEngine {
@@ -135,6 +215,7 @@ class _TategakiTextState extends State<TategakiText> {
       child: ListView.separated(
         // PageStorageKey でスクロール位置を保持する
         key: scrollPositionKey,
+        controller: _scrollController,
         scrollDirection: Axis.horizontal,
         itemCount: _computedCount,
         // 列間のスペース（旧実装の columnSpacing に相当）
@@ -146,9 +227,16 @@ class _TategakiTextState extends State<TategakiText> {
             _scheduleExtend();
           }
           final column = engine.columnAt(index);
+          final highlight = widget.highlight;
           return CustomPaint(
             size: Size(column.width, widget.height),
-            painter: TategakiColumnPainter(column: column),
+            painter: TategakiColumnPainter(
+              column: column,
+              // 範囲外の列には渡さず、無駄な再描画を避ける
+              highlight: highlight != null && highlight.overlapsColumn(column)
+                  ? highlight
+                  : null,
+            ),
           );
         },
       ),

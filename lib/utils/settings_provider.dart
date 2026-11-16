@@ -18,6 +18,8 @@ class AppSettings {
     required this.isRubyEnabled,
     this.isOfflineMode = false,
     this.maxLineChars = 0,
+    this.ttsRate = 0.5,
+    this.ttsPitch = 1.0,
   });
 
   /// テーマモード (system, light, dark)。
@@ -56,6 +58,12 @@ class AppSettings {
   /// 縦書きは列の高さ、横書きは行の幅をこの文字数分に抑える。
   final int maxLineChars;
 
+  /// 読み上げの速さ（0.1〜1.0。0.5 が標準）。
+  final double ttsRate;
+
+  /// 読み上げの声の高さ（0.5〜2.0。1.0 が標準）。
+  final double ttsPitch;
+
   /// 設定をコピーするメソッド。
   AppSettings copyWith({
     ThemeMode? themeMode,
@@ -67,6 +75,8 @@ class AppSettings {
     bool? isRubyEnabled,
     bool? isOfflineMode,
     int? maxLineChars,
+    double? ttsRate,
+    double? ttsPitch,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -78,6 +88,8 @@ class AppSettings {
       isRubyEnabled: isRubyEnabled ?? this.isRubyEnabled,
       isOfflineMode: isOfflineMode ?? this.isOfflineMode,
       maxLineChars: maxLineChars ?? this.maxLineChars,
+      ttsRate: ttsRate ?? this.ttsRate,
+      ttsPitch: ttsPitch ?? this.ttsPitch,
     );
   }
 }
@@ -94,6 +106,8 @@ class Settings extends _$Settings {
   static const _isRubyEnabledKey = 'is_ruby_enabled';
   static const _isOfflineModeKey = 'is_offline_mode';
   static const _maxLineCharsKey = 'max_line_chars';
+  static const _ttsRateKey = 'tts_rate';
+  static const _ttsPitchKey = 'tts_pitch';
 
   /// 1行の文字数の上限として選べる最小値。
   static const int minLineChars = 15;
@@ -132,6 +146,8 @@ class Settings extends _$Settings {
     final isRubyEnabled = await repo.getBool(_isRubyEnabledKey) ?? true;
     final isOfflineMode = await repo.getBool(_isOfflineModeKey) ?? false;
     final maxLineChars = await repo.getInt(_maxLineCharsKey) ?? 0;
+    final ttsRate = await repo.getDouble(_ttsRateKey) ?? 0.5;
+    final ttsPitch = await repo.getDouble(_ttsPitchKey) ?? 1.0;
 
     return AppSettings(
       themeMode: ThemeMode.values[themeModeIndex],
@@ -143,7 +159,33 @@ class Settings extends _$Settings {
       isRubyEnabled: isRubyEnabled,
       isOfflineMode: isOfflineMode,
       maxLineChars: maxLineChars,
+      ttsRate: ttsRate,
+      ttsPitch: ttsPitch,
     );
+  }
+
+  /// 読み上げの速さ・声の高さを設定するメソッド。
+  Future<void> setTtsVoice({double? rate, double? pitch}) async {
+    if (!state.hasValue) {
+      throw StateError('Settings are not loaded');
+    }
+
+    try {
+      final repo = await _repo;
+      if (rate != null && !await repo.setDouble(_ttsRateKey, rate)) {
+        throw Exception('Failed to save tts rate setting');
+      }
+      if (pitch != null && !await repo.setDouble(_ttsPitchKey, pitch)) {
+        throw Exception('Failed to save tts pitch setting');
+      }
+      state = AsyncData(
+        state.value!.copyWith(ttsRate: rate, ttsPitch: pitch),
+      );
+    } catch (e, stackTrace) {
+      debugPrint('Error saving tts setting: $e\nStack trace: $stackTrace');
+      state = AsyncError(e, stackTrace);
+      rethrow;
+    }
   }
 
   /// 1行の文字数の上限を設定するメソッド（0 なら制限なし）。

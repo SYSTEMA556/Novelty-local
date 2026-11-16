@@ -55,6 +55,24 @@ class TategakiColumnEngine {
     return _columns[index];
   }
 
+  /// 要素の位置 [elementIndex] を含む列の番号を返す（必要な分だけ計算する）
+  ///
+  /// 改行などで列に置かれない要素は、その直後の列を返す。
+  /// 見つからなければ null。
+  int? columnIndexOfElement(int elementIndex) {
+    var i = 0;
+    while (true) {
+      if (i >= _columns.length && computeNextColumn() == null) {
+        return null;
+      }
+      final last = _columns[i].lastElementIndex;
+      if (last != null && last >= elementIndex) {
+        return i;
+      }
+      i++;
+    }
+  }
+
   /// 次の列を1つ計算して返す（もう列がなければ null）
   TategakiColumn? computeNextColumn() {
     // 改行で保留された空の列を先に返す
@@ -141,6 +159,7 @@ class TategakiColumnEngine {
           item: measured,
           inlineOffset: inlineOffset,
           blockOffset: 0,
+          elementIndex: _elementIndex,
         ),
       );
       used = inlineOffset + measured.advance;

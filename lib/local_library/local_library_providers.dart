@@ -165,6 +165,7 @@ class ReadingPositionsNotifier
     String? mode,
     double? offset,
     double? progress,
+    int? ttsOffset,
   }) {
     final current = state.value;
     if (current == null) return;
@@ -178,6 +179,7 @@ class ReadingPositionsNotifier
         offsets: offsets,
         progress: _clamp01(progress ?? previous?.progress ?? 0),
         updatedAt: DateTime.now(),
+        ttsOffset: ttsOffset ?? previous?.ttsOffset,
       ),
     });
 

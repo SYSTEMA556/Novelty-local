@@ -50,5 +50,9 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
+        <!-- 読み上げ（端末の音声合成エンジン）を呼び出すため -->
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
     </queries>
 </manifest>

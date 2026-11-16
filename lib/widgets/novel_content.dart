@@ -83,6 +83,8 @@ class NovelContentBody extends HookWidget {
     required this.settings,
     required this.content,
     this.source,
+    this.highlightStart,
+    this.highlightEnd,
     super.key,
   });
 
@@ -102,6 +104,12 @@ class NovelContentBody extends HookWidget {
 
   /// コンテンツの状態
   final AsyncValue<List<NovelContentElement>> content;
+
+  /// 背景色を付ける範囲の開始（本文位置。読み上げ中の文など）
+  final int? highlightStart;
+
+  /// 背景色を付ける範囲の終了（本文位置、含まない）
+  final int? highlightEnd;
 
   @override
   Widget build(BuildContext context) {
@@ -145,15 +153,32 @@ class NovelContentBody extends HookWidget {
     // TategakiText / TategakiTextPaged 側のレイアウトキャッシュが有効になる。
     final contentData = content.value;
     final settingsData = settings.value;
-    final tategakiElements = useMemoized(
+    final conversion = useMemoized(
       () => contentData == null
           ? null
-          : TategakiConverter.convert(
+          : TategakiConverter.convertWithOffsets(
               contentData,
               isRubyEnabled: settingsData?.isRubyEnabled ?? true,
             ),
       [contentData, settingsData?.isRubyEnabled],
     );
+    final tategakiElements = conversion?.elements;
+
+    // 読み上げ中の文などに付ける背景色
+    final highlightColor = Theme.of(
+      context,
+    ).colorScheme.primaryContainer.withValues(alpha: 0.6);
+    final hlStart = highlightStart;
+    final hlEnd = highlightEnd;
+    TategakiHighlight? tategakiHighlight;
+    if (conversion != null && hlStart != null && hlEnd != null) {
+      final range = conversion.elementRange(hlStart, hlEnd);
+      tategakiHighlight = TategakiHighlight(
+        start: range.start,
+        end: range.end,
+        color: highlightColor,
+      );
+    }
 
     return settings.when(
       data: (settingsData) {
@@ -218,6 +243,7 @@ class NovelContentBody extends HookWidget {
                         elements,
                         width: constraints.maxWidth,
                         height: constraints.maxHeight,
+                        highlight: tategakiHighlight,
                         padding: verticalModePadding.copyWith(
                           bottom: verticalModePadding.bottom + extra,
                         ),
@@ -243,6 +269,7 @@ class NovelContentBody extends HookWidget {
                           key: PageStorageKey<String>(
                             'novel_vertical_${workId}_$episode',
                           ),
+                          highlight: tategakiHighlight,
                           // 列の高さを上限までに抑える（上詰め）
                           height: clampLineExtent(
                             constraints.maxHeight,
@@ -276,6 +303,9 @@ class NovelContentBody extends HookWidget {
                         child: NovelContentView(
                           elements: contentData,
                           isRubyEnabled: settingsData.isRubyEnabled,
+                          highlightStart: highlightStart,
+                          highlightEnd: highlightEnd,
+                          highlightColor: highlightColor,
                         ),
                       ),
                     ),

@@ -21,6 +21,8 @@ class ReaderSettingsPage extends ConsumerWidget {
             _buildFontSection(context, ref, data),
             const Divider(),
             _buildLayoutSection(context, ref, data),
+            const Divider(),
+            _buildReadAloudSection(context, ref, data),
           ],
         ),
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -264,5 +266,74 @@ class ReaderSettingsPage extends ConsumerWidget {
           ),
         ),
     ];
+  }
+
+  /// 読み上げ（速さ・声の高さ）。
+  Widget _buildReadAloudSection(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    Future<void> save({double? rate, double? pitch}) async {
+      try {
+        await ref
+            .read(settingsProvider.notifier)
+            .setTtsVoice(rate: rate, pitch: pitch);
+      } on Exception catch (e, stackTrace) {
+        debugPrint('Failed to save tts voice: $e\n$stackTrace');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('読み上げ設定の保存に失敗しました'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Text(
+            '読み上げ',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              color: Theme.of(context).colorScheme.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        ListTile(
+          title: Text('速さ: ${(settings.ttsRate * 2).toStringAsFixed(1)} 倍'),
+          subtitle: Slider(
+            value: settings.ttsRate.clamp(0.1, 1.0),
+            min: 0.1,
+            divisions: 18,
+            label: '${(settings.ttsRate * 2).toStringAsFixed(1)} 倍',
+            onChanged: (value) => save(rate: value),
+          ),
+        ),
+        ListTile(
+          title: Text('声の高さ: ${settings.ttsPitch.toStringAsFixed(1)}'),
+          subtitle: Slider(
+            value: settings.ttsPitch.clamp(0.5, 2.0),
+            min: 0.5,
+            max: 2,
+            divisions: 15,
+            label: settings.ttsPitch.toStringAsFixed(1),
+            onChanged: (value) => save(pitch: value),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Text(
+            '声の種類や読み方は、端末の「テキスト読み上げ」設定'
+            '（音声エンジン）に従います。',
+          ),
+        ),
+      ],
+    );
   }
 }

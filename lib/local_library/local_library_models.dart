@@ -127,6 +127,7 @@ class ReadingPosition {
     required this.offsets,
     required this.progress,
     required this.updatedAt,
+    this.ttsOffset,
   });
 
   /// JSONから生成する。
@@ -139,6 +140,7 @@ class ReadingPosition {
       },
       progress: (json['progress'] as num?)?.toDouble() ?? 0,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
+      ttsOffset: json['ttsOffset'] as int?,
     );
   }
 
@@ -151,11 +153,15 @@ class ReadingPosition {
   /// 最後に読んだ日時。
   final DateTime updatedAt;
 
+  /// 最後に読み上げた文の位置（本文位置。読み上げたことが無ければ null）。
+  final int? ttsOffset;
+
   /// JSONに変換する。
   Map<String, dynamic> toJson() => {
     'offsets': offsets,
     'progress': progress,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
+    if (ttsOffset != null) 'ttsOffset': ttsOffset,
   };
 }
 

@@ -10,6 +10,7 @@ class TategakiPlacedItem {
     required this.item,
     required this.inlineOffset,
     required this.blockOffset,
+    this.elementIndex = -1,
   });
 
   /// 計測済みの要素
@@ -21,12 +22,16 @@ class TategakiPlacedItem {
   /// ブロック方向（横）の開始位置
   final double blockOffset;
 
+  /// 元の要素リストでの位置（ハイライト・追従に使う。不明なら -1）
+  final int elementIndex;
+
   /// 計測結果を複製して位置を差し替えたものを返す
   TategakiPlacedItem copyWith({double? inlineOffset, double? blockOffset}) {
     return TategakiPlacedItem(
       item: item,
       inlineOffset: inlineOffset ?? this.inlineOffset,
       blockOffset: blockOffset ?? this.blockOffset,
+      elementIndex: elementIndex,
     );
   }
 }
@@ -55,6 +60,14 @@ class TategakiColumn {
 
   /// 内容が空かどうか
   bool get isEmpty => placedItems.isEmpty;
+
+  /// 列に含まれる最初の要素の位置（空の列は null）
+  int? get firstElementIndex =>
+      placedItems.isEmpty ? null : placedItems.first.elementIndex;
+
+  /// 列に含まれる最後の要素の位置（空の列は null）
+  int? get lastElementIndex =>
+      placedItems.isEmpty ? null : placedItems.last.elementIndex;
 }
 
 /// レイアウト計算結果のメトリクス

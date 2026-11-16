@@ -1,5 +1,6 @@
 import 'package:flutter/rendering.dart';
 
+import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/column.dart';
 import 'package:tategaki/src/layout/tategaki_layout.dart';
 
@@ -8,10 +9,14 @@ class TategakiPainter extends CustomPainter {
   /// コンストラクタ
   const TategakiPainter({
     required this.metrics,
+    this.highlight,
   });
 
   /// レイアウトメトリクス
   final TategakiMetrics metrics;
+
+  /// 背景色を付ける範囲（なければ null）
+  final TategakiHighlight? highlight;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -54,6 +59,7 @@ class TategakiPainter extends CustomPainter {
         continue;
       }
 
+      highlight?.paintColumn(canvas, column, Offset(currentColumnX, 0));
       for (final placed in column.placedItems) {
         placed.item.paintable.paint(
           canvas,
@@ -66,6 +72,7 @@ class TategakiPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant TategakiPainter oldDelegate) {
-    return metrics != oldDelegate.metrics;
+    return metrics != oldDelegate.metrics ||
+        highlight != oldDelegate.highlight;
   }
 }

@@ -6,6 +6,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
@@ -109,11 +111,44 @@ class LocalTextReaderPage extends HookConsumerWidget {
       isPageFlip: settingsValue?.isPageFlip ?? false,
     );
 
+    // 読み上げ
+    final positionsNotifier = ref.read(readingPositionsProvider.notifier);
+    final document = useMemoized(
+      () => SpeechDocument.fromElements(elements),
+      [elements],
+    );
+    final readAloud = useMemoized(
+      () => ReadAloudController(
+        document: document,
+        // 読み上げた位置を、次回「前回の続きから」読めるよう保存する
+        onPositionChanged: (segment) {
+          final id = workId;
+          if (id == null) return;
+          scheduleMicrotask(
+            () => positionsNotifier.record(id, ttsOffset: segment.start),
+          );
+        },
+      ),
+      [document],
+    );
+    useEffect(() => readAloud.dispose, [readAloud]);
+    useListenable(readAloud);
+    useEffect(() {
+      readAloud.setVoice(
+        rate: settingsValue?.ttsRate ?? 0.5,
+        pitch: settingsValue?.ttsPitch ?? 1,
+      );
+      return null;
+    }, [readAloud, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
+    final speaking = readAloud.isActive ? readAloud.currentSegment : null;
+
     Widget body = NovelContentBody(
       workId: workId ?? 'local:$title',
       episode: 1,
       settings: settings,
       content: AsyncData(elements),
+      highlightStart: speaking?.start,
+      highlightEnd: speaking?.end,
     );
 
     final id = workId;
@@ -126,6 +161,13 @@ class LocalTextReaderPage extends HookConsumerWidget {
           ? AppBar(
               title: Text(title, overflow: TextOverflow.ellipsis),
               actions: [
+                IconButton(
+                  icon: const Icon(Icons.record_voice_over_outlined),
+                  tooltip: '読み上げ',
+                  onPressed: () => unawaited(
+                    _startReadAloud(context, ref, readAloud),
+                  ),
+                ),
                 // 読みながら文字サイズ・行の長さなどを変えられるようにする
                 IconButton(
                   icon: const Icon(Icons.tune),
@@ -150,6 +192,135 @@ class LocalTextReaderPage extends HookConsumerWidget {
             SafeArea(top: !isAppBarVisible.value, child: body),
             // 縦書きモード時、ホームジェスチャーとの競合を防ぐ
             if (isVertical) const GestureShield(),
+            // 読み上げ中（一時停止中を含む）は操作ボタンを出す
+            if (readAloud.isActive)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 16,
+                child: SafeArea(
+                  top: false,
+                  child: _ReadAloudBar(controller: readAloud),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// どこから読み上げるかを選んで、読み上げを始める。
+  Future<void> _startReadAloud(
+    BuildContext context,
+    WidgetRef ref,
+    ReadAloudController controller,
+  ) async {
+    final document = controller.document;
+    if (document.segments.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('読み上げる文がありません')));
+      return;
+    }
+    if (controller.status == ReadAloudStatus.paused) {
+      await controller.resume();
+      return;
+    }
+
+    final id = workId;
+    final position = id == null
+        ? null
+        : ref.read(readingPositionsProvider).value?[id];
+    final ttsOffset = position?.ttsOffset;
+
+    final choice = await showModalBottomSheet<int>(
+      context: context,
+      useSafeArea: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const ListTile(title: Text('どこから読み上げますか？')),
+            if (position != null)
+              ListTile(
+                leading: const Icon(Icons.bookmark_outline),
+                title: const Text('今読んでいる辺りから'),
+                subtitle: Text(
+                  'しおりの位置（${(position.progress * 100).round()}%）の目安',
+                ),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  document.segmentIndexAtProgress(position.progress),
+                ),
+              ),
+            if (ttsOffset != null)
+              ListTile(
+                leading: const Icon(Icons.history),
+                title: const Text('前回読み上げた文から'),
+                onTap: () => Navigator.pop(
+                  sheetContext,
+                  document.segmentIndexAt(ttsOffset),
+                ),
+              ),
+            ListTile(
+              leading: const Icon(Icons.first_page),
+              title: const Text('最初から'),
+              onTap: () => Navigator.pop(sheetContext, 0),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null) return;
+    await controller.playFrom(choice);
+  }
+}
+
+/// 読み上げ中に画面下に出す操作ボタン。
+class _ReadAloudBar extends StatelessWidget {
+  const _ReadAloudBar({required this.controller});
+
+  final ReadAloudController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = controller.document.segments.length;
+    return Material(
+      elevation: 4,
+      borderRadius: BorderRadius.circular(28),
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            Text(
+              '${controller.index + 1} / $total',
+              style: Theme.of(context).textTheme.labelMedium,
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.skip_previous),
+              tooltip: '前の文',
+              onPressed: () => unawaited(controller.previous()),
+            ),
+            IconButton.filled(
+              icon: Icon(controller.isPlaying ? Icons.pause : Icons.play_arrow),
+              tooltip: controller.isPlaying ? '一時停止' : '再開',
+              onPressed: () => unawaited(
+                controller.isPlaying ? controller.pause() : controller.resume(),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.skip_next),
+              tooltip: '次の文',
+              onPressed: () => unawaited(controller.next()),
+            ),
+            IconButton(
+              icon: const Icon(Icons.stop),
+              tooltip: '停止',
+              onPressed: () => unawaited(controller.stop()),
+            ),
           ],
         ),
       ),

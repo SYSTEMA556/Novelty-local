@@ -1,5 +1,6 @@
 import 'package:flutter/rendering.dart';
 
+import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/column.dart';
 
 /// 縦書きの1列を描画する CustomPainter
@@ -10,13 +11,18 @@ class TategakiColumnPainter extends CustomPainter {
   /// コンストラクタ
   const TategakiColumnPainter({
     required this.column,
+    this.highlight,
   });
 
   /// 描画対象の列
   final TategakiColumn column;
 
+  /// 背景色を付ける範囲（なければ null）
+  final TategakiHighlight? highlight;
+
   @override
   void paint(Canvas canvas, Size size) {
+    highlight?.paintColumn(canvas, column, Offset.zero);
     for (final placed in column.placedItems) {
       placed.item.paintable.paint(
         canvas,
@@ -27,6 +33,6 @@ class TategakiColumnPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant TategakiColumnPainter oldDelegate) {
-    return oldDelegate.column != column;
+    return oldDelegate.column != column || oldDelegate.highlight != highlight;
   }
 }

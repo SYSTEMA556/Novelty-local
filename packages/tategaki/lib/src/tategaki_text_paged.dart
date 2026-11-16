@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:ui' as ui;
 
 import 'package:flutter/widgets.dart';
 
 import 'package:tategaki/src/element/tategaki_element.dart';
+import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/column.dart';
 import 'package:tategaki/src/layout/tategaki_column_engine.dart';
 import 'package:tategaki/src/layout/tategaki_layout.dart';
@@ -27,6 +29,8 @@ class TategakiTextPaged extends StatefulWidget {
     this.padding = EdgeInsets.zero,
     this.onPageChanged,
     this.controller,
+    this.highlight,
+    this.followHighlight = true,
     super.key,
   });
 
@@ -48,6 +52,12 @@ class TategakiTextPaged extends StatefulWidget {
   /// ページコントローラー
   final PageController? controller;
 
+  /// 背景色を付ける範囲（読み上げ中の文など）
+  final TategakiHighlight? highlight;
+
+  /// [highlight] が別のページに移ったら自動でページをめくるか
+  final bool followHighlight;
+
   @override
   State<TategakiTextPaged> createState() => _TategakiTextPagedState();
 }
@@ -62,6 +72,68 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
   double? _cachedHeight;
   EdgeInsets? _cachedPadding;
   TextStyle? _cachedStyle;
+
+  /// controller が渡されないときに使うコントローラー
+  /// （PageStorage による位置の保存・復元はこのコントローラーでも働く）
+  PageController? _ownController;
+
+  PageController get _controller =>
+      widget.controller ?? (_ownController ??= PageController());
+
+  @override
+  void didUpdateWidget(covariant TategakiTextPaged oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final highlight = widget.highlight;
+    if (widget.followHighlight &&
+        highlight != null &&
+        highlight != oldWidget.highlight) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _revealElement(highlight.start);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _ownController?.dispose();
+    super.dispose();
+  }
+
+  /// 要素 [elementIndex] を含むページの番号（見つからなければ null）
+  int? _pageOfElement(int elementIndex) {
+    final pages = _pages;
+    if (pages == null) return null;
+    for (var i = 0; i < pages.length; i++) {
+      for (final column in pages[i].columns) {
+        final last = column.lastElementIndex;
+        if (last != null && last >= elementIndex) {
+          return i;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 要素 [elementIndex] を含むページが表示されていなければ、めくる
+  void _revealElement(int elementIndex) {
+    final controller = _controller;
+    final page = _pageOfElement(elementIndex);
+    if (page == null || !controller.hasClients) return;
+    final current = controller.page?.round();
+    if (current == page) return;
+    // 隣のページならめくる動き、離れていれば一気に移る
+    if (current != null && (current - page).abs() == 1) {
+      unawaited(
+        controller.animateToPage(
+          page,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        ),
+      );
+    } else {
+      controller.jumpToPage(page);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -117,11 +189,19 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
     return Directionality(
       textDirection: TextDirection.rtl,
       child: PageView.builder(
-        controller: widget.controller,
+        controller: _controller,
         onPageChanged: widget.onPageChanged,
         itemCount: pages.length,
         itemBuilder: (context, index) {
           final pageMetrics = pages[index];
+          // ハイライトはそのページに含まれる場合だけ渡す
+          // （他のページのプリレンダ済み画像を作り直さないため）
+          final highlight = widget.highlight;
+          final pageHighlight =
+              highlight != null &&
+                  pageMetrics.columns.any(highlight.overlapsColumn)
+              ? highlight
+              : null;
 
           return Padding(
             padding: widget.padding,
@@ -129,6 +209,7 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
               child: _TategakiPagedPage(
                 metrics: pageMetrics,
                 size: pageSize,
+                highlight: pageHighlight,
               ),
             ),
           );
@@ -147,6 +228,7 @@ class _TategakiPagedPage extends StatefulWidget {
   const _TategakiPagedPage({
     required this.metrics,
     required this.size,
+    this.highlight,
   });
 
   /// ページのメトリクス
@@ -154,6 +236,9 @@ class _TategakiPagedPage extends StatefulWidget {
 
   /// ページのサイズ
   final Size size;
+
+  /// 背景色を付ける範囲（このページに含まれる場合のみ）
+  final TategakiHighlight? highlight;
 
   @override
   State<_TategakiPagedPage> createState() => _TategakiPagedPageState();
@@ -173,7 +258,10 @@ class _TategakiPagedPageState extends State<_TategakiPagedPage> {
     final canvas = Canvas(recorder)
       // クリップ領域をページサイズに制限してカリングを効かせる
       ..clipRect(Offset.zero & widget.size);
-    TategakiPainter(metrics: widget.metrics).paint(canvas, widget.size);
+    TategakiPainter(
+      metrics: widget.metrics,
+      highlight: widget.highlight,
+    ).paint(canvas, widget.size);
     final picture = recorder.endRecording();
     _picture = picture;
     return picture;
@@ -182,7 +270,8 @@ class _TategakiPagedPageState extends State<_TategakiPagedPage> {
   @override
   void didUpdateWidget(covariant _TategakiPagedPage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.metrics, widget.metrics)) {
+    if (!identical(oldWidget.metrics, widget.metrics) ||
+        oldWidget.highlight != widget.highlight) {
       // ページ内容が変わった場合は Picture を作り直す
       _picture?.dispose();
       _picture = null;
