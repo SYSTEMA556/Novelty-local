@@ -77,7 +77,11 @@ enum LocalViewMode {
 /// 作者ごとの作品のまとまり。
 class AuthorGroup {
   /// コンストラクタ。
-  const AuthorGroup({required this.key, required this.name, required this.works});
+  const AuthorGroup({
+    required this.key,
+    required this.name,
+    required this.works,
+  });
 
   /// グループ分けのキー（作者不明は空文字）。
   final String key;

@@ -14,11 +14,6 @@ class LocalWork {
     this.metaVersion = currentMetaVersion,
   });
 
-  /// 作品情報（作者など）の読み取り規則の版。
-  ///
-  /// 規則を改良したら上げる。これより古い作品は読み込み時に読み取り直す。
-  static const int currentMetaVersion = 1;
-
   /// JSONから生成する。
   factory LocalWork.fromJson(Map<String, dynamic> json) {
     return LocalWork(
@@ -32,6 +27,11 @@ class LocalWork {
       metaVersion: json['metaVersion'] as int? ?? 0,
     );
   }
+
+  /// 作品情報（作者など）の読み取り規則の版。
+  ///
+  /// 規則を改良したら上げる。これより古い作品は読み込み時に読み取り直す。
+  static const int currentMetaVersion = 1;
 
   /// 作品ID（ファイル名から算出する固定長の識別子）。
   final String id;
