@@ -80,9 +80,9 @@ class WebReadingPositionsNotifier
   @override
   Future<Map<String, WebEpisodePosition>> build() async {
     ref.onDispose(() => _saveTimer?.cancel());
-    final file = await _file();
-    if (!file.existsSync()) return {};
     try {
+      final file = await _file();
+      if (!file.existsSync()) return {};
       final json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       return {
@@ -91,8 +91,8 @@ class WebReadingPositionsNotifier
             entry.value as Map<String, dynamic>,
           ),
       };
-    } on FormatException {
-      // 壊れていたら読書位置なしで始める
+    } on Object {
+      // 読めない・壊れているときは読書位置なしで始める
       return {};
     }
   }
@@ -120,15 +120,20 @@ class WebReadingPositionsNotifier
     _saveTimer = null;
     final current = state.value;
     if (current == null) return;
-    final file = await _file();
-    await file.parent.create(recursive: true);
-    final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(
-      jsonEncode({
-        for (final entry in current.entries) entry.key: entry.value.toJson(),
-      }),
-      flush: true,
-    );
-    await tmp.rename(file.path);
+    try {
+      final file = await _file();
+      await file.parent.create(recursive: true);
+      final tmp = File('${file.path}.tmp');
+      await tmp.writeAsString(
+        jsonEncode({
+          for (final entry in current.entries)
+            entry.key: entry.value.toJson(),
+        }),
+        flush: true,
+      );
+      await tmp.rename(file.path);
+    } on Object {
+      // 保存できなくても読書は続けられるので、次の機会に任せる
+    }
   }
 }

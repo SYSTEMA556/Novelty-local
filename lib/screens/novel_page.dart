@@ -627,7 +627,7 @@ class _EpisodeBookmarkScope extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     // 保存済みの位置を読み終えてから本文を出す（先に出すと最初から表示される）
     final loaded = ref.watch(
-      webReadingPositionsProvider.select((value) => value.hasValue),
+      webReadingPositionsProvider.select((value) => !value.isLoading),
     );
     final notifier = ref.read(webReadingPositionsProvider.notifier);
     final modeRef = useRef(mode)..value = mode;
