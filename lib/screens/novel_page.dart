@@ -625,7 +625,7 @@ class _EpisodeBookmarkScope extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // 保存済みの位置を読み終えてから本文を出す（先に出すと最初から表示される）
+    // 保存済みの位置を読み終えたかどうか（読み込みはすぐ終わる）
     final loaded = ref.watch(
       webReadingPositionsProvider.select((value) => !value.isLoading),
     );
@@ -645,7 +645,11 @@ class _EpisodeBookmarkScope extends HookConsumerWidget {
       },
       [positionKey, loaded],
     );
-    if (!loaded) return const SizedBox.shrink();
-    return PageStorage(bucket: bucket, child: child);
+    // 読み込みが済んだら作り直して、保存済みの位置を反映させる
+    return PageStorage(
+      key: ValueKey(loaded),
+      bucket: bucket,
+      child: child,
+    );
   }
 }
