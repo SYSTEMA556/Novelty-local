@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
+import 'package:novelty/local_library/author_profiles.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -15,6 +16,7 @@ import 'package:path/path.dart' as p;
 /// - `index.json`: 作品一覧
 /// - `positions.json`: 読書位置（しおり）
 /// - `rules.json`: 作者の読み取りルール
+/// - `authors.json`: 作者名の変更・読み仮名
 /// - `texts/<id>.txt`: 本文（UTF-8・BOMなしに正規化）
 class LocalLibraryStore {
   /// コンストラクタ。
@@ -28,6 +30,23 @@ class LocalLibraryStore {
   File get _positionsFile => File(p.join(rootDir.path, 'positions.json'));
 
   File get _rulesFile => File(p.join(rootDir.path, 'rules.json'));
+
+  File get _authorsFile => File(p.join(rootDir.path, 'authors.json'));
+
+  /// 作者名の変更・読み仮名を読み込む。
+  Future<AuthorProfiles> loadAuthorProfiles() async {
+    if (!_authorsFile.existsSync()) return AuthorProfiles.empty;
+    try {
+      final json = jsonDecode(await _authorsFile.readAsString());
+      return AuthorProfiles.fromJson(json as Map<String, dynamic>);
+    } on FormatException {
+      return AuthorProfiles.empty;
+    }
+  }
+
+  /// 作者名の変更・読み仮名を保存する。
+  Future<void> saveAuthorProfiles(AuthorProfiles profiles) =>
+      _writeAtomically(_authorsFile, jsonEncode(profiles.toJson()));
 
   /// 本文の保存先ディレクトリ。
   Directory get textsDir => Directory(p.join(rootDir.path, 'texts'));

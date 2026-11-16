@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:novelty/local_library/author_profiles.dart';
+import 'package:novelty/local_library/kana_index.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -11,6 +13,7 @@ import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
 import 'package:novelty/screens/local_meta_rules_page.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
+import 'package:novelty/widgets/indexed_list.dart';
 
 /// ローカル作品の並び順。
 enum LocalSort {
@@ -30,26 +33,28 @@ enum LocalSort {
 }
 
 /// 検索語と並び順を適用した作品一覧を返す。
+///
+/// 検索は作品名と作者名（名前の変更を反映したもの）に当てる。
+/// タイトル順は「# → A〜Z → あ〜わ → 漢」の順に並べる。
 List<LocalWork> filterAndSortWorks(
   List<LocalWork> works,
   Map<String, ReadingPosition> positions, {
   required String query,
   required LocalSort sort,
+  AuthorProfiles profiles = AuthorProfiles.empty,
 }) {
   final q = query.trim().toLowerCase();
-  final result = q.isEmpty
-      ? [...works]
-      : works
-            .where(
-              (w) =>
-                  w.title.toLowerCase().contains(q) ||
-                  (w.author?.toLowerCase().contains(q) ?? false),
-            )
-            .toList();
+  bool matches(LocalWork w) {
+    if (w.title.toLowerCase().contains(q)) return true;
+    final author = profiles.effectiveName(w.author);
+    return author?.toLowerCase().contains(q) ?? false;
+  }
+
+  final result = q.isEmpty ? [...works] : works.where(matches).toList();
 
   switch (sort) {
     case LocalSort.title:
-      result.sort((a, b) => a.title.compareTo(b.title));
+      result.sort((a, b) => KanaIndex.compare(a.title, b.title));
     case LocalSort.added:
       result.sort((a, b) => b.addedAt.compareTo(a.addedAt));
     case LocalSort.recent:
@@ -57,7 +62,9 @@ List<LocalWork> filterAndSortWorks(
       result.sort((a, b) {
         final pa = positions[a.id]?.updatedAt;
         final pb = positions[b.id]?.updatedAt;
-        if (pa == null && pb == null) return a.title.compareTo(b.title);
+        if (pa == null && pb == null) {
+          return KanaIndex.compare(a.title, b.title);
+        }
         if (pa == null) return 1;
         if (pb == null) return -1;
         return pb.compareTo(pa);
@@ -82,6 +89,7 @@ class AuthorGroup {
     required this.key,
     required this.name,
     required this.works,
+    this.reading,
   });
 
   /// グループ分けのキー（作者不明は空文字）。
@@ -90,11 +98,24 @@ class AuthorGroup {
   /// 表示名。
   final String name;
 
+  /// 読み仮名（未設定なら null）。
+  final String? reading;
+
   /// この作者の作品。
   final List<LocalWork> works;
 
   /// 作者不明のグループか。
   bool get isUnknown => key.isEmpty;
+
+  /// 判定された元の作者名（名前の変更前。重複なし）。
+  Set<String> get originalAuthors => {
+    for (final w in works)
+      if (w.author != null) w.author!,
+  };
+
+  /// 右端のインデックスの見出し。
+  String get indexLabel =>
+      isUnknown ? KanaIndex.unknownLabel : KanaIndex.labelOf(reading ?? name);
 }
 
 /// 作者不明の作品をまとめるグループの表示名。
@@ -102,33 +123,47 @@ const unknownAuthorLabel = '作者不明';
 
 /// 作品を作者ごとにまとめる。
 ///
-/// 表記揺れ（全角/半角・空白）は同じ作者として扱い、名前順に並べる。
-/// 作者不明は最後に置く。[query] は作者名で絞り込む。
-List<AuthorGroup> groupByAuthor(List<LocalWork> works, {String query = ''}) {
+/// 名前の変更（[profiles]）を反映し、表記揺れ（全角/半角・空白）は
+/// 同じ作者として扱う。読み仮名があればそれで並べ、作者不明は最後に置く。
+/// [query] は作者名・読み仮名で絞り込む。
+List<AuthorGroup> groupByAuthor(
+  List<LocalWork> works, {
+  String query = '',
+  AuthorProfiles profiles = AuthorProfiles.empty,
+}) {
   final byKey = <String, List<LocalWork>>{};
   final names = <String, String>{};
   for (final work in works) {
-    final author = work.author;
+    final author = profiles.effectiveName(work.author);
     final key = author == null ? '' : WorkMetaDetector.authorKey(author);
     byKey.putIfAbsent(key, () => []).add(work);
     names.putIfAbsent(key, () => author ?? unknownAuthorLabel);
   }
 
   final q = query.trim().toLowerCase();
-  final groups = [
-    for (final entry in byKey.entries)
-      if (q.isEmpty || names[entry.key]!.toLowerCase().contains(q))
-        AuthorGroup(
-          key: entry.key,
-          name: names[entry.key]!,
-          works: entry.value..sort((a, b) => a.title.compareTo(b.title)),
-        ),
-  ]..sort((a, b) {
-      if (a.isUnknown != b.isUnknown) return a.isUnknown ? 1 : -1;
-      // 正規化したキーで並べ、全角・半角の違いで順番がずれないようにする
-      return a.key.compareTo(b.key);
-    });
-  return groups;
+  final groups = <AuthorGroup>[];
+  for (final entry in byKey.entries) {
+    final name = names[entry.key]!;
+    final reading = entry.key.isEmpty ? null : profiles.readingOf(name);
+    final hit =
+        q.isEmpty ||
+        name.toLowerCase().contains(q) ||
+        (reading?.toLowerCase().contains(q) ?? false);
+    if (!hit) continue;
+    groups.add(
+      AuthorGroup(
+        key: entry.key,
+        name: name,
+        reading: reading,
+        works: entry.value
+          ..sort((a, b) => KanaIndex.compare(a.title, b.title)),
+      ),
+    );
+  }
+  return groups..sort((a, b) {
+    if (a.isUnknown != b.isUnknown) return a.isUnknown ? 1 : -1;
+    return KanaIndex.compare(a.reading ?? a.name, b.reading ?? b.name);
+  });
 }
 
 /// ライブラリ画面の「ローカル」タブ。
@@ -142,6 +177,8 @@ class LocalLibraryView extends HookConsumerWidget {
     final positions =
         ref.watch(readingPositionsProvider).value ??
         const <String, ReadingPosition>{};
+    final profiles =
+        ref.watch(authorProfilesProvider).value ?? AuthorProfiles.empty;
     final query = useState('');
     final sort = useState(LocalSort.title);
     final viewMode = useState(LocalViewMode.works);
@@ -155,14 +192,15 @@ class LocalLibraryView extends HookConsumerWidget {
               positions,
               query: query.value,
               sort: sort.value,
+              profiles: profiles,
             ),
-      [allWorks, positions, query.value, sort.value],
+      [allWorks, positions, query.value, sort.value, profiles],
     );
     final groups = useMemoized(
       () => allWorks == null
           ? const <AuthorGroup>[]
-          : groupByAuthor(allWorks, query: query.value),
-      [allWorks, query.value],
+          : groupByAuthor(allWorks, query: query.value, profiles: profiles),
+      [allWorks, query.value, profiles],
     );
     final isAuthorMode = viewMode.value == LocalViewMode.authors;
 
@@ -297,8 +335,12 @@ class LocalLibraryView extends HookConsumerWidget {
                   Expanded(
                     child: isAuthorMode
                         ? _AuthorList(groups: groups, positions: positions)
-                        : ListView.builder(
+                        : IndexedList(
                             itemCount: works.length,
+                            // 見出しが意味を持つのはタイトル順のときだけ
+                            showIndex: sort.value == LocalSort.title,
+                            labelOf: (index) =>
+                                KanaIndex.labelOf(works[index].title),
                             itemBuilder: (context, index) {
                               final work = works[index];
                               return LocalWorkTile(
@@ -325,31 +367,32 @@ class LocalLibraryView extends HookConsumerWidget {
 }
 
 /// 作者ごとの一覧。
-class _AuthorList extends StatelessWidget {
+class _AuthorList extends ConsumerWidget {
   const _AuthorList({required this.groups, required this.positions});
 
   final List<AuthorGroup> groups;
   final Map<String, ReadingPosition> positions;
 
   @override
-  Widget build(BuildContext context) {
-    return ListView.builder(
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IndexedList(
       itemCount: groups.length,
+      labelOf: (index) => groups[index].indexLabel,
       itemBuilder: (context, index) {
         final group = groups[index];
         final readCount = group.works
             .where((w) => positions.containsKey(w.id))
             .length;
+        final reading = group.reading;
+        final counts = readCount == 0
+            ? '${group.works.length} 作品'
+            : '${group.works.length} 作品・読みかけ $readCount';
         return ListTile(
           leading: Icon(
             group.isUnknown ? Icons.help_outline : Icons.person_outline,
           ),
           title: Text(group.name),
-          subtitle: Text(
-            readCount == 0
-                ? '${group.works.length} 作品'
-                : '${group.works.length} 作品・読みかけ $readCount',
-          ),
+          subtitle: Text(reading == null ? counts : '$reading・$counts'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => unawaited(
             Navigator.of(context).push(
@@ -361,8 +404,91 @@ class _AuthorList extends StatelessWidget {
               ),
             ),
           ),
+          onLongPress: group.isUnknown
+              ? null
+              : () => unawaited(showEditAuthorDialog(context, ref, group)),
         );
       },
+    );
+  }
+}
+
+/// 作者の名前・読み仮名の編集ダイアログ。
+///
+/// 保存した名前を返す（キャンセルなら null）。
+/// 名前の変更はその作者の全作品に反映され、再判定しても失われない。
+Future<String?> showEditAuthorDialog(
+  BuildContext context,
+  WidgetRef ref,
+  AuthorGroup group,
+) async {
+  final result = await showDialog<(String, String)>(
+    context: context,
+    builder: (_) => _EditAuthorDialog(group: group),
+  );
+  if (result == null) return null;
+  final (name, reading) = result;
+  await ref
+      .read(authorProfilesProvider.notifier)
+      .edit(
+        originalAuthors: group.originalAuthors,
+        newName: name,
+        reading: reading,
+      );
+  return name.trim();
+}
+
+class _EditAuthorDialog extends HookWidget {
+  const _EditAuthorDialog({required this.group});
+
+  final AuthorGroup group;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = useTextEditingController(text: group.name);
+    final reading = useTextEditingController(text: group.reading ?? '');
+    useListenable(name);
+    final nameEmpty = name.text.trim().isEmpty;
+
+    return AlertDialog(
+      title: const Text('作者を編集'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              decoration: InputDecoration(
+                labelText: '作者名',
+                errorText: nameEmpty ? '作者名を入力してください' : null,
+                helperText: '他の作者と同じ名前にすると1人にまとまります',
+                helperMaxLines: 2,
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: reading,
+              decoration: const InputDecoration(
+                labelText: '読み仮名',
+                helperText: '入れると右端の「あ〜わ」の正しい行に並びます',
+                helperMaxLines: 2,
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: nameEmpty
+              ? null
+              : () => Navigator.pop(context, (name.text, reading.text)),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
@@ -522,7 +648,7 @@ Future<void> confirmDeleteLocalWork(
 }
 
 /// ローカル作品の1行表示。
-class LocalWorkTile extends StatelessWidget {
+class LocalWorkTile extends ConsumerWidget {
   /// コンストラクタ。
   const LocalWorkTile({
     required this.work,
@@ -553,9 +679,11 @@ class LocalWorkTile extends StatelessWidget {
   final bool showAuthor;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final pos = position;
-    final author = work.author;
+    final profiles =
+        ref.watch(authorProfilesProvider).value ?? AuthorProfiles.empty;
+    final author = profiles.effectiveName(work.author);
     final details = [
       if (showAuthor && author != null) author,
       if (work.manualMeta) '手修正',

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:novelty/local_library/author_profiles.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_store.dart';
 import 'package:novelty/local_library/meta_rules.dart';
@@ -75,6 +76,38 @@ class LocalWorksNotifier extends AsyncNotifier<List<LocalWork>> {
     await store.deleteWorks(ids);
     state = AsyncData(await store.loadWorks());
     ref.invalidate(readingPositionsProvider);
+  }
+}
+
+/// 作者名の変更・読み仮名。
+final authorProfilesProvider =
+    AsyncNotifierProvider<AuthorProfilesNotifier, AuthorProfiles>(
+      AuthorProfilesNotifier.new,
+    );
+
+/// 作者名の変更・読み仮名を管理する。変更はすぐに保存する。
+class AuthorProfilesNotifier extends AsyncNotifier<AuthorProfiles> {
+  @override
+  Future<AuthorProfiles> build() async {
+    final store = await ref.watch(localLibraryStoreProvider.future);
+    return store.loadAuthorProfiles();
+  }
+
+  /// 作者の名前・読み仮名を変更する。
+  Future<void> edit({
+    required Iterable<String> originalAuthors,
+    required String newName,
+    required String? reading,
+  }) async {
+    final current = state.value ?? AuthorProfiles.empty;
+    final updated = current.edit(
+      originalAuthors: originalAuthors,
+      newName: newName,
+      reading: reading,
+    );
+    state = AsyncData(updated);
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.saveAuthorProfiles(updated);
   }
 }
 
