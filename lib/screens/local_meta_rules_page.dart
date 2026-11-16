@@ -74,10 +74,10 @@ class LocalMetaRulesPage extends HookConsumerWidget {
           onSave: save,
           sampleName: sampleName.text,
         ),
-        onReorder: (oldIndex, newIndex) {
+        onReorderItem: (oldIndex, newIndex) {
+          // newIndex は取り出した後の位置に調整済み
           final list = [...rules.rules];
-          final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
-          list.insert(target, list.removeAt(oldIndex));
+          list.insert(newIndex, list.removeAt(oldIndex));
           save(rules.copyWith(rules: list));
         },
         children: [

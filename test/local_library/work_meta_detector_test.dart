@@ -282,7 +282,10 @@ void main() {
     });
 
     test('保存に無い組み込みルールは末尾に補う', () {
-      final restored = MetaRuleSet.fromJson(const {'rules': [], 'strips': []});
+      final restored = MetaRuleSet.fromJson(const {
+        'rules': <dynamic>[],
+        'strips': <dynamic>[],
+      });
       expect(restored, MetaRuleSet.defaults);
     });
 

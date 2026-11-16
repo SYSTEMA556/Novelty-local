@@ -45,7 +45,7 @@ enum RuleTarget {
 class MetaRule {
   /// 組み込みルール。
   const MetaRule.builtin(BuiltinRule this.builtin, {this.enabled = true})
-    : id = 'builtin:${builtin.name}',
+    : _customId = null,
       name = '',
       target = RuleTarget.fileName,
       pattern = '';
@@ -55,12 +55,13 @@ class MetaRule {
   /// [pattern] には名前付きグループ `(?<author>...)` と
   /// `(?<title>...)` を書く（どちらか一方でもよい）。
   const MetaRule.custom({
-    required this.id,
+    required String id,
     required this.name,
     required this.target,
     required this.pattern,
     this.enabled = true,
-  }) : builtin = null;
+  }) : builtin = null,
+       _customId = id;
 
   /// JSONから生成する。
   factory MetaRule.fromJson(Map<String, dynamic> json) {
@@ -81,8 +82,11 @@ class MetaRule {
     );
   }
 
+  // 自作ルールの識別子（組み込みは種類から決まるため null）
+  final String? _customId;
+
   /// 識別子。
-  final String id;
+  String get id => _customId ?? 'builtin:${builtin!.name}';
 
   /// 組み込みルールの種類（自作なら null）。
   final BuiltinRule? builtin;
@@ -186,8 +190,11 @@ class StripPattern {
     isBuiltin: true,
   );
 
+  // 自作ルールの識別子（組み込みは種類から決まるため null）
+  final String? _customId;
+
   /// 識別子。
-  final String id;
+  String get id => _customId ?? 'builtin:${builtin!.name}';
 
   /// 表示名。
   final String name;
