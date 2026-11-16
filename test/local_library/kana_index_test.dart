@@ -27,14 +27,13 @@ void main() {
 
   group('compare', () {
     test('# → A〜Z → あ〜わ → 漢 の順に並ぶ', () {
-      final items = ['漢字', 'かきく', '1番', 'Bob', 'あいう', 'カキク'];
-      items.sort(KanaIndex.compare);
+      final items = ['漢字', 'かきく', '1番', 'Bob', 'あいう', 'カキク']
+        ..sort(KanaIndex.compare);
       expect(items, ['1番', 'Bob', 'あいう', 'かきく', 'カキク', '漢字']);
     });
 
     test('カタカナとひらがなは同じ読みとして並ぶ', () {
-      final items = ['かも', 'カベルネ', 'かなぎ'];
-      items.sort(KanaIndex.compare);
+      final items = ['かも', 'カベルネ', 'かなぎ']..sort(KanaIndex.compare);
       expect(items, ['かなぎ', 'カベルネ', 'かも']);
     });
   });
