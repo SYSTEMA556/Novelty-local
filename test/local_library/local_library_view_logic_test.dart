@@ -4,13 +4,15 @@ import 'package:novelty/screens/local_library_view.dart';
 import 'package:novelty/screens/local_text_reader_page.dart';
 
 void main() {
-  LocalWork work(String id, String title, int addedMs) => LocalWork(
-    id: id,
-    title: title,
-    fileName: '$title.txt',
-    charCount: 100,
-    addedAt: DateTime.fromMillisecondsSinceEpoch(addedMs),
-  );
+  LocalWork work(String id, String title, int addedMs, {String? author}) =>
+      LocalWork(
+        id: id,
+        title: title,
+        fileName: '$title.txt',
+        charCount: 100,
+        addedAt: DateTime.fromMillisecondsSinceEpoch(addedMs),
+        author: author,
+      );
 
   ReadingPosition readAt(int ms) => ReadingPosition(
     offsets: const {},
@@ -74,6 +76,41 @@ void main() {
       expect(readingModeKey(isVertical: false, isPageFlip: true), 'h');
       expect(readingModeKey(isVertical: true, isPageFlip: false), 'vs');
       expect(readingModeKey(isVertical: true, isPageFlip: true), 'vp');
+    });
+  });
+
+  group('作者での検索と作者別まとめ', () {
+    final authored = [
+      work('1', '海辺', 1, author: 'Ｅ・Ｓ・ガードナー'),
+      work('2', '山道', 2, author: 'E・S・ガードナー'),
+      work('3', '川辺', 3, author: '夏目漱石'),
+      work('4', '無名', 4),
+    ];
+
+    test('作品一覧の検索は作者名にも当たる', () {
+      final result = filterAndSortWorks(
+        authored,
+        const {},
+        query: '漱石',
+        sort: LocalSort.title,
+      );
+      expect(result.map((w) => w.id), ['3']);
+    });
+
+    test('表記揺れを同じ作者にまとめ、作者不明は最後に置く', () {
+      final groups = groupByAuthor(authored);
+      expect(groups.map((g) => g.name), [
+        'Ｅ・Ｓ・ガードナー',
+        '夏目漱石',
+        unknownAuthorLabel,
+      ]);
+      expect(groups.first.works.map((w) => w.title), ['山道', '海辺']);
+      expect(groups.last.isUnknown, isTrue);
+    });
+
+    test('作者名で絞り込める', () {
+      final groups = groupByAuthor(authored, query: '夏目');
+      expect(groups.map((g) => g.name), ['夏目漱石']);
     });
   });
 }

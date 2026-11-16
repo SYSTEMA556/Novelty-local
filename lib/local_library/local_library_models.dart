@@ -10,7 +10,14 @@ class LocalWork {
     required this.fileName,
     required this.charCount,
     required this.addedAt,
+    this.author,
+    this.metaVersion = currentMetaVersion,
   });
+
+  /// 作品情報（作者など）の読み取り規則の版。
+  ///
+  /// 規則を改良したら上げる。これより古い作品は読み込み時に読み取り直す。
+  static const int currentMetaVersion = 1;
 
   /// JSONから生成する。
   factory LocalWork.fromJson(Map<String, dynamic> json) {
@@ -20,6 +27,9 @@ class LocalWork {
       fileName: json['fileName'] as String,
       charCount: json['charCount'] as int? ?? 0,
       addedAt: DateTime.fromMillisecondsSinceEpoch(json['addedAt'] as int),
+      author: json['author'] as String?,
+      // 作者機能より前に取り込んだ作品は 0（要読み取り）
+      metaVersion: json['metaVersion'] as int? ?? 0,
     );
   }
 
@@ -38,6 +48,24 @@ class LocalWork {
   /// 取り込み日時。
   final DateTime addedAt;
 
+  /// 作者名（読み取れなかった場合は null）。
+  final String? author;
+
+  /// 作品情報を読み取った規則の版。
+  final int metaVersion;
+
+  /// 作品名・作者を差し替えたコピーを返す。
+  LocalWork withMeta({required String title, required String? author}) {
+    return LocalWork(
+      id: id,
+      title: title,
+      fileName: fileName,
+      charCount: charCount,
+      addedAt: addedAt,
+      author: author,
+    );
+  }
+
   /// JSONに変換する。
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -45,6 +73,8 @@ class LocalWork {
     'fileName': fileName,
     'charCount': charCount,
     'addedAt': addedAt.millisecondsSinceEpoch,
+    'author': author,
+    'metaVersion': metaVersion,
   };
 
   @override
@@ -55,10 +85,13 @@ class LocalWork {
           title == other.title &&
           fileName == other.fileName &&
           charCount == other.charCount &&
-          addedAt == other.addedAt;
+          addedAt == other.addedAt &&
+          author == other.author &&
+          metaVersion == other.metaVersion;
 
   @override
-  int get hashCode => Object.hash(id, title, fileName, charCount, addedAt);
+  int get hashCode =>
+      Object.hash(id, title, fileName, charCount, addedAt, author, metaVersion);
 }
 
 /// 作品ごとの読書位置（しおり）。

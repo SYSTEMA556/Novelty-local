@@ -5,6 +5,8 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/local_library/work_meta_detector.dart';
+import 'package:novelty/screens/local_author_works_page.dart';
 import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
@@ -36,7 +38,13 @@ List<LocalWork> filterAndSortWorks(
   final q = query.trim().toLowerCase();
   final result = q.isEmpty
       ? [...works]
-      : works.where((w) => w.title.toLowerCase().contains(q)).toList();
+      : works
+            .where(
+              (w) =>
+                  w.title.toLowerCase().contains(q) ||
+                  (w.author?.toLowerCase().contains(q) ?? false),
+            )
+            .toList();
 
   switch (sort) {
     case LocalSort.title:
@@ -57,6 +65,67 @@ List<LocalWork> filterAndSortWorks(
   return result;
 }
 
+/// ローカルタブの表示単位。
+enum LocalViewMode {
+  /// 作品ごと。
+  works,
+
+  /// 作者ごと。
+  authors,
+}
+
+/// 作者ごとの作品のまとまり。
+class AuthorGroup {
+  /// コンストラクタ。
+  const AuthorGroup({required this.key, required this.name, required this.works});
+
+  /// グループ分けのキー（作者不明は空文字）。
+  final String key;
+
+  /// 表示名。
+  final String name;
+
+  /// この作者の作品。
+  final List<LocalWork> works;
+
+  /// 作者不明のグループか。
+  bool get isUnknown => key.isEmpty;
+}
+
+/// 作者不明の作品をまとめるグループの表示名。
+const unknownAuthorLabel = '作者不明';
+
+/// 作品を作者ごとにまとめる。
+///
+/// 表記揺れ（全角/半角・空白）は同じ作者として扱い、名前順に並べる。
+/// 作者不明は最後に置く。[query] は作者名で絞り込む。
+List<AuthorGroup> groupByAuthor(List<LocalWork> works, {String query = ''}) {
+  final byKey = <String, List<LocalWork>>{};
+  final names = <String, String>{};
+  for (final work in works) {
+    final author = work.author;
+    final key = author == null ? '' : WorkMetaDetector.authorKey(author);
+    byKey.putIfAbsent(key, () => []).add(work);
+    names.putIfAbsent(key, () => author ?? unknownAuthorLabel);
+  }
+
+  final q = query.trim().toLowerCase();
+  final groups = [
+    for (final entry in byKey.entries)
+      if (q.isEmpty || names[entry.key]!.toLowerCase().contains(q))
+        AuthorGroup(
+          key: entry.key,
+          name: names[entry.key]!,
+          works: entry.value..sort((a, b) => a.title.compareTo(b.title)),
+        ),
+  ]..sort((a, b) {
+      if (a.isUnknown != b.isUnknown) return a.isUnknown ? 1 : -1;
+      // 正規化したキーで並べ、全角・半角の違いで順番がずれないようにする
+      return a.key.compareTo(b.key);
+    });
+  return groups;
+}
+
 /// ライブラリ画面の「ローカル」タブ。
 class LocalLibraryView extends HookConsumerWidget {
   /// コンストラクタ。
@@ -70,6 +139,7 @@ class LocalLibraryView extends HookConsumerWidget {
         const <String, ReadingPosition>{};
     final query = useState('');
     final sort = useState(LocalSort.title);
+    final viewMode = useState(LocalViewMode.works);
 
     final allWorks = worksAsync.value;
     final works = useMemoized(
@@ -83,6 +153,13 @@ class LocalLibraryView extends HookConsumerWidget {
             ),
       [allWorks, positions, query.value, sort.value],
     );
+    final groups = useMemoized(
+      () => allWorks == null
+          ? const <AuthorGroup>[]
+          : groupByAuthor(allWorks, query: query.value),
+      [allWorks, query.value],
+    );
+    final isAuthorMode = viewMode.value == LocalViewMode.authors;
 
     final toolbar = Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 4, 0),
@@ -91,7 +168,7 @@ class LocalLibraryView extends HookConsumerWidget {
           Expanded(
             child: TextField(
               decoration: const InputDecoration(
-                hintText: 'タイトルで検索',
+                hintText: '作品名・作者名で検索',
                 prefixIcon: Icon(Icons.search),
                 isDense: true,
                 border: OutlineInputBorder(),
@@ -99,16 +176,17 @@ class LocalLibraryView extends HookConsumerWidget {
               onChanged: (value) => query.value = value,
             ),
           ),
-          PopupMenuButton<LocalSort>(
-            icon: const Icon(Icons.sort),
-            tooltip: '並び替え',
-            initialValue: sort.value,
-            onSelected: (value) => sort.value = value,
-            itemBuilder: (_) => [
-              for (final s in LocalSort.values)
-                PopupMenuItem(value: s, child: Text(s.label)),
-            ],
-          ),
+          if (!isAuthorMode)
+            PopupMenuButton<LocalSort>(
+              icon: const Icon(Icons.sort),
+              tooltip: '並び替え',
+              initialValue: sort.value,
+              onSelected: (value) => sort.value = value,
+              itemBuilder: (_) => [
+                for (final s in LocalSort.values)
+                  PopupMenuItem(value: s, child: Text(s.label)),
+              ],
+            ),
           IconButton(
             icon: const Icon(Icons.bookmarks_outlined),
             tooltip: 'しおり一覧',
@@ -154,32 +232,60 @@ class LocalLibraryView extends HookConsumerWidget {
                   ),
                 );
               }
+              final countText = isAuthorMode
+                  ? '${groups.length} 人'
+                  : '${works.length} / ${all.length} 件';
               return Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        '${works.length} / ${all.length} 件',
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 16, 4),
+                    child: Row(
+                      children: [
+                        // 作品ごと／作者ごとの表示切り替え
+                        SegmentedButton<LocalViewMode>(
+                          segments: const [
+                            ButtonSegment(
+                              value: LocalViewMode.works,
+                              label: Text('作品'),
+                              icon: Icon(Icons.description_outlined),
+                            ),
+                            ButtonSegment(
+                              value: LocalViewMode.authors,
+                              label: Text('作者'),
+                              icon: Icon(Icons.person_outline),
+                            ),
+                          ],
+                          selected: {viewMode.value},
+                          showSelectedIcon: false,
+                          onSelectionChanged: (selection) =>
+                              viewMode.value = selection.first,
+                        ),
+                        const Spacer(),
+                        Text(
+                          countText,
+                          style: Theme.of(context).textTheme.labelMedium,
+                        ),
+                      ],
                     ),
                   ),
                   Expanded(
-                    child: ListView.builder(
-                      itemCount: works.length,
-                      itemBuilder: (context, index) {
-                        final work = works[index];
-                        return LocalWorkTile(
-                          work: work,
-                          position: positions[work.id],
-                          onTap: () => unawaited(openLocalWork(context, work)),
-                          onLongPress: () =>
-                              unawaited(_confirmDelete(context, ref, work)),
-                        );
-                      },
-                    ),
+                    child: isAuthorMode
+                        ? _AuthorList(groups: groups, positions: positions)
+                        : ListView.builder(
+                            itemCount: works.length,
+                            itemBuilder: (context, index) {
+                              final work = works[index];
+                              return LocalWorkTile(
+                                work: work,
+                                position: positions[work.id],
+                                onTap: () =>
+                                    unawaited(openLocalWork(context, work)),
+                                onLongPress: () => unawaited(
+                                  confirmDeleteLocalWork(context, ref, work),
+                                ),
+                              );
+                            },
+                          ),
                   ),
                 ],
               );
@@ -190,36 +296,81 @@ class LocalLibraryView extends HookConsumerWidget {
     );
   }
 
-  Future<void> _confirmDelete(
-    BuildContext context,
-    WidgetRef ref,
-    LocalWork work,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('削除の確認'),
-        content: Text('"${work.title}"をローカルライブラリから削除しますか？\n'
-            'しおりも削除されます（元のファイルは残ります）。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('キャンセル'),
+}
+
+/// 作者ごとの一覧。
+class _AuthorList extends StatelessWidget {
+  const _AuthorList({required this.groups, required this.positions});
+
+  final List<AuthorGroup> groups;
+  final Map<String, ReadingPosition> positions;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      itemCount: groups.length,
+      itemBuilder: (context, index) {
+        final group = groups[index];
+        final readCount = group.works
+            .where((w) => positions.containsKey(w.id))
+            .length;
+        return ListTile(
+          leading: Icon(
+            group.isUnknown ? Icons.help_outline : Icons.person_outline,
           ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('削除'),
+          title: Text(group.name),
+          subtitle: Text(
+            readCount == 0
+                ? '${group.works.length} 作品'
+                : '${group.works.length} 作品・読みかけ $readCount',
           ),
-        ],
-      ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => unawaited(
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => LocalAuthorWorksPage(
+                  authorKey: group.key,
+                  authorName: group.name,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
-    if (confirmed != true) return;
-    await ref.read(localWorksProvider.notifier).delete({work.id});
-    if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('削除しました')));
-    }
+  }
+}
+
+/// ローカル作品の削除を確認し、承認されたら削除する。
+Future<void> confirmDeleteLocalWork(
+  BuildContext context,
+  WidgetRef ref,
+  LocalWork work,
+) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('削除の確認'),
+      content: Text('"${work.title}"をローカルライブラリから削除しますか？\n'
+          'しおりも削除されます（元のファイルは残ります）。'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('キャンセル'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('削除'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true) return;
+  await ref.read(localWorksProvider.notifier).delete({work.id});
+  if (context.mounted) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('削除しました')));
   }
 }
 
@@ -232,6 +383,7 @@ class LocalWorkTile extends StatelessWidget {
     required this.onTap,
     this.onLongPress,
     this.showLastRead = false,
+    this.showAuthor = true,
     super.key,
   });
 
@@ -250,10 +402,15 @@ class LocalWorkTile extends StatelessWidget {
   /// 最終閲覧日時を表示するか。
   final bool showLastRead;
 
+  /// 作者名を表示するか（作者別の画面では不要）。
+  final bool showAuthor;
+
   @override
   Widget build(BuildContext context) {
     final pos = position;
+    final author = work.author;
     final details = [
+      if (showAuthor && author != null) author,
       formatCharCount(work.charCount),
       if (pos != null) '${(pos.progress * 100).round()}%',
       if (pos != null && showLastRead) formatDateTime(pos.updatedAt),

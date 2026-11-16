@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/local_library_models.dart';
+import 'package:novelty/local_library/work_meta_detector.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:path/path.dart' as p;
 
@@ -45,11 +46,20 @@ class LocalLibraryStore {
   }
 
   /// 作品一覧を読み込む。
+  ///
+  /// 作者機能より前に取り込んだ作品があれば、本文冒頭から
+  /// 作品名・作者を読み取り直して保存する（初回のみ）。
   Future<List<LocalWork>> loadWorks() async {
     if (!_indexFile.existsSync()) return [];
     final raw = await _indexFile.readAsString();
     // 5000件規模でもUIが固まらないよう別Isolateで解析する
-    return _decodeWorksInBackground(raw);
+    final works = await _decodeWorksInBackground(raw);
+    if (works.every((w) => w.metaVersion >= LocalWork.currentMetaVersion)) {
+      return works;
+    }
+    final migrated = await _refreshMetaInBackground(works, textsDir.path);
+    await saveWorks(migrated);
+    return migrated;
   }
 
   /// 作品一覧を保存する。
@@ -166,6 +176,11 @@ Future<List<LocalWork>> _decodeWorksInBackground(String raw) =>
 Future<String> _encodeInBackground(Object data) =>
     Isolate.run(() => jsonEncode(data));
 
+Future<List<LocalWork>> _refreshMetaInBackground(
+  List<LocalWork> works,
+  String textsDirPath,
+) => Isolate.run(() => refreshWorkMeta(works, textsDirPath));
+
 Future<List<ImportItemResult>> _importBatchInBackground(
   List<String> paths,
   String textsDirPath,
@@ -222,11 +237,13 @@ List<ImportItemResult> importBatch(
     try {
       final text = PlainTextNovelParser.decode(File(path).readAsBytesSync());
       File(p.join(textsDirPath, '$id.txt')).writeAsStringSync(text);
+      final meta = WorkMetaDetector.detect(fileName: fileName, head: text);
       results.add(
         ImportItemResult.added(
           LocalWork(
             id: id,
-            title: p.basenameWithoutExtension(fileName),
+            title: meta.title,
+            author: meta.author,
             fileName: fileName,
             charCount: text.length,
             addedAt: now,
@@ -239,4 +256,35 @@ List<ImportItemResult> importBatch(
     }
   }
   return results;
+}
+
+/// 古い規則で取り込んだ作品の作品名・作者を、本文冒頭から読み取り直す。
+///
+/// 別Isolateで実行するためトップレベル関数にしている。
+@visibleForTesting
+List<LocalWork> refreshWorkMeta(List<LocalWork> works, String textsDirPath) {
+  return [
+    for (final work in works)
+      if (work.metaVersion >= LocalWork.currentMetaVersion)
+        work
+      else
+        _refreshOne(work, textsDirPath),
+  ];
+}
+
+LocalWork _refreshOne(LocalWork work, String textsDirPath) {
+  // 冒頭の解析に必要な分だけ読む（UTF-8は1文字最大4バイト）
+  const headBytes = WorkMetaDetector.headLength * 4;
+  final file = File(p.join(textsDirPath, '${work.id}.txt'));
+  var head = '';
+  if (file.existsSync()) {
+    final raf = file.openSync();
+    try {
+      head = utf8.decode(raf.readSync(headBytes), allowMalformed: true);
+    } finally {
+      raf.closeSync();
+    }
+  }
+  final meta = WorkMetaDetector.detect(fileName: work.fileName, head: head);
+  return work.withMeta(title: meta.title, author: meta.author);
 }

@@ -152,4 +152,47 @@ void main() {
       );
     });
   });
+
+  group('作者の読み取り', () {
+    test('取り込み時に本文冒頭とファイル名から作者を読み取る', () async {
+      final a = writeSource('山田_海辺の話.txt', utf8.encode('本文'));
+      final b = writeSource(
+        '00001_20140101_1200_題.txt',
+        utf8.encode('<div class="info">\n「題」\n作者:佐藤\n</div>\n'),
+      );
+
+      await store.importFiles([a, b]);
+
+      final works = {for (final w in await store.loadWorks()) w.fileName: w};
+      expect(works['山田_海辺の話.txt']!.author, '山田');
+      expect(works['山田_海辺の話.txt']!.title, '海辺の話');
+      expect(works['00001_20140101_1200_題.txt']!.author, '佐藤');
+      expect(works['00001_20140101_1200_題.txt']!.title, '題');
+    });
+
+    test('作者機能より前に取り込んだ作品は、読み込み時に読み取り直す', () async {
+      final path = writeSource('山田_海辺の話.txt', utf8.encode('本文'));
+      await store.importFiles([path]);
+      // 旧形式（author・metaVersion なし）の一覧に書き戻す
+      final old = (await store.loadWorks()).single;
+      final legacy = old.toJson()
+        ..remove('author')
+        ..remove('metaVersion')
+        ..['title'] = '山田_海辺の話';
+      File(
+        p.join(store.rootDir.path, 'index.json'),
+      ).writeAsStringSync(jsonEncode([legacy]));
+
+      final migrated = (await store.loadWorks()).single;
+
+      expect(migrated.author, '山田');
+      expect(migrated.title, '海辺の話');
+      expect(migrated.metaVersion, LocalWork.currentMetaVersion);
+      // 2回目以降は保存済みの結果を使う
+      final raw = File(
+        p.join(store.rootDir.path, 'index.json'),
+      ).readAsStringSync();
+      expect(raw, contains('"metaVersion":${LocalWork.currentMetaVersion}'));
+    });
+  });
 }
