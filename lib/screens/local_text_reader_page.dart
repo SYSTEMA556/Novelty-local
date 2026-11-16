@@ -13,6 +13,7 @@ import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
+import 'package:novelty/widgets/persistent_page_storage.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/widgets/reader_position_bar.dart';
@@ -302,14 +303,6 @@ class LocalTextReaderPage extends HookConsumerWidget {
   }
 }
 
-/// 表示モードを読書位置の保存キーに変換する。
-///
-/// スクロール位置の意味がモードごとに異なるため、別々に保存する。
-String readingModeKey({required bool isVertical, required bool isPageFlip}) {
-  if (!isVertical) return 'h';
-  return isPageFlip ? 'vp' : 'vs';
-}
-
 /// 配下のスクロール位置を読書位置として保存・復元するウィジェット。
 ///
 /// Flutter のスクロールは位置を [PageStorage] に書き込み、
@@ -363,41 +356,5 @@ class _BookmarkScope extends HookConsumerWidget {
       },
       child: PageStorage(bucket: bucket, child: child),
     );
-  }
-}
-
-/// 読み書きを1つのキー（表示モード）に集約する [PageStorageBucket]。
-///
-/// 読書画面にはスクロール領域が1つしかないため、
-/// 識別子は使わず表示モードごとに値を保持する。
-@visibleForTesting
-class PersistentPageStorageBucket extends PageStorageBucket {
-  /// コンストラクタ。
-  PersistentPageStorageBucket({
-    required Map<String, double> initialValues,
-    required this.currentKey,
-    required this.onWrite,
-  }) : _values = initialValues;
-
-  final Map<String, double> _values;
-
-  /// 現在の表示モードのキーを返す。
-  final String Function() currentKey;
-
-  /// 位置が書き込まれたときに呼ばれる。
-  final void Function(String key, double value) onWrite;
-
-  @override
-  Object? readState(BuildContext context, {Object? identifier}) {
-    return _values[currentKey()];
-  }
-
-  @override
-  void writeState(BuildContext context, Object? data, {Object? identifier}) {
-    if (data is! double) return;
-    final key = currentKey();
-    if (_values[key] == data) return;
-    _values[key] = data;
-    onWrite(key, data);
   }
 }

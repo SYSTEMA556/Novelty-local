@@ -12,8 +12,10 @@ import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/utils/web_reading_positions.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
+import 'package:novelty/widgets/persistent_page_storage.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/widgets/reader_position_bar.dart';
@@ -96,6 +98,10 @@ class NovelPage extends HookConsumerWidget {
     }, [readAloud.value, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
     // 読み終えたときの処理（毎回最新の状態を見るよう ref で持つ）
     final advanceRef = useRef<VoidCallback?>(null);
+
+    // 話の途中の位置は少し待ってまとめて保存するので、閉じるときに確定させる
+    final webPositions = ref.read(webReadingPositionsProvider.notifier);
+    useEffect(() => () => unawaited(webPositions.flush()), const []);
 
     // 最初の履歴追加（novelInfoが読み込まれたら実行）
     useEffect(() {
@@ -355,7 +361,18 @@ class NovelPage extends HookConsumerWidget {
                             : episodeMap[episodeNum];
 
                         return RepaintBoundary(
-                          child: NovelContent(
+                          // 話ごとにスクロール位置を覚えて、次に開いたとき続きから
+                          child: _EpisodeBookmarkScope(
+                            positionKey: webEpisodeKey(
+                              source,
+                              workId,
+                              episodeNum,
+                            ),
+                            mode: readingModeKey(
+                              isVertical: settings.isVertical,
+                              isPageFlip: settings.isPageFlip,
+                            ),
+                            child: NovelContent(
                             source: source,
                             workId: workId,
                             episode: episodeNum,
@@ -391,6 +408,7 @@ class NovelPage extends HookConsumerWidget {
                                       curve: Curves.easeOut,
                                     ),
                             ),
+                          ),
                           ),
                         );
                       },
@@ -587,5 +605,47 @@ class NovelPage extends HookConsumerWidget {
     } else {
       return '第$currentEpisodeNum話';
     }
+  }
+}
+
+/// 1話分の本文のスクロール位置を、話ごとに保存・復元する。
+///
+/// 本文ウィジェットのスクロール位置の保存先（[PageStorage]）を
+/// 差し替えることで、アプリを閉じても話の途中から読めるようにする。
+class _EpisodeBookmarkScope extends HookConsumerWidget {
+  const _EpisodeBookmarkScope({
+    required this.positionKey,
+    required this.mode,
+    required this.child,
+  });
+
+  final String positionKey;
+  final String mode;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 保存済みの位置を読み終えてから本文を出す（先に出すと最初から表示される）
+    final loaded = ref.watch(
+      webReadingPositionsProvider.select((value) => value.hasValue),
+    );
+    final notifier = ref.read(webReadingPositionsProvider.notifier);
+    final modeRef = useRef(mode)..value = mode;
+    final bucket = useMemoized(
+      () {
+        final saved = ref.read(webReadingPositionsProvider).value;
+        return PersistentPageStorageBucket(
+          initialValues: {...?saved?[positionKey]?.offsets},
+          currentKey: () => modeRef.value,
+          // スクロール処理の途中で状態を変えないよう、処理後に反映する
+          onWrite: (key, value) => scheduleMicrotask(
+            () => notifier.record(positionKey, mode: key, offset: value),
+          ),
+        );
+      },
+      [positionKey, loaded],
+    );
+    if (!loaded) return const SizedBox.shrink();
+    return PageStorage(bucket: bucket, child: child);
   }
 }

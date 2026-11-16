@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/screens/local_library_view.dart';
-import 'package:novelty/screens/local_text_reader_page.dart';
+import 'package:novelty/widgets/persistent_page_storage.dart';
 
 void main() {
   LocalWork work(String id, String title, int addedMs, {String? author}) =>
