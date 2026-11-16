@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
 
 void main() {
@@ -25,10 +26,10 @@ void main() {
       );
     });
 
-    test('情報欄が無い番号付きファイル名は、番号と日時を除いて作品名にする', () {
+    test('番号付きファイル名は、番号と日時を除いてから判定する', () {
       expect(
-        detect('00002_20140101_1200_作者っぽい_タイトル.txt', '本文だけ'),
-        const WorkMeta(title: '作者っぽい_タイトル'),
+        detect('00002_20140101_1200_無題の話.txt', '本文だけ'),
+        const WorkMeta(title: '無題の話'),
       );
     });
 
@@ -128,6 +129,167 @@ void main() {
         WorkMetaDetector.authorKey('夏目 漱石'),
         WorkMetaDetector.authorKey('夏目漱石'),
       );
+    });
+  });
+
+  group('ルール設定', () {
+    MetaRuleSet withRules(
+      List<MetaRule> rules, {
+      List<StripPattern>? strips,
+    }) => MetaRuleSet(
+      rules: rules,
+      strips: strips ?? MetaRuleSet.defaults.strips,
+    );
+
+    test('無効にしたルールは使わない', () {
+      final rules = withRules([
+        const MetaRule.builtin(BuiltinRule.nameUnderscore, enabled: false),
+        const MetaRule.builtin(BuiltinRule.nameDash),
+      ]);
+      expect(
+        WorkMetaDetector.detect(
+          fileName: 'A_B-C.txt',
+          head: '',
+          rules: rules,
+        ),
+        const WorkMeta(title: 'C', author: 'A_B'),
+      );
+    });
+
+    test('上にあるルールが優先される', () {
+      final rules = withRules([
+        const MetaRule.builtin(BuiltinRule.nameDash),
+        const MetaRule.builtin(BuiltinRule.nameUnderscore),
+      ]);
+      expect(
+        WorkMetaDetector.detect(fileName: 'A_B-C.txt', head: '', rules: rules),
+        const WorkMeta(title: 'C', author: 'A_B'),
+      );
+    });
+
+    test('自作ルール（ファイル名）：名前付きグループで作者と作品名を取る', () {
+      final rules = withRules([
+        const MetaRule.custom(
+          id: 'c1',
+          name: '作品（作者）',
+          target: RuleTarget.fileName,
+          pattern: r'^(?<title>.+)（(?<author>.+)）$',
+        ),
+      ]);
+      final result = WorkMetaDetector.detectDetailed(
+        fileName: '海辺の話（山田）.txt',
+        head: '',
+        rules: rules,
+      );
+      expect(result.meta, const WorkMeta(title: '海辺の話', author: '山田'));
+      expect(result.rule?.id, 'c1');
+    });
+
+    test('自作ルール（本文の冒頭）：行頭・行末を使える', () {
+      final rules = withRules([
+        const MetaRule.custom(
+          id: 'c2',
+          name: '著者行',
+          target: RuleTarget.head,
+          pattern: r'^著者[:：](?<author>.+)$',
+        ),
+      ]);
+      expect(
+        WorkMetaDetector.detect(
+          fileName: '題.txt',
+          head: '題\n著者：佐藤\n本文',
+          rules: rules,
+        ),
+        const WorkMeta(title: '題', author: '佐藤'),
+      );
+    });
+
+    test('正規表現が誤っている自作ルールは飛ばす', () {
+      final rules = withRules([
+        const MetaRule.custom(
+          id: 'bad',
+          name: '壊れたルール',
+          target: RuleTarget.fileName,
+          pattern: '(?<author>',
+        ),
+        const MetaRule.builtin(BuiltinRule.nameUnderscore),
+      ]);
+      expect(
+        WorkMetaDetector.detect(fileName: '山田_題.txt', head: '', rules: rules),
+        const WorkMeta(title: '題', author: '山田'),
+      );
+    });
+
+    test('除去パターンを追加・無効化できる', () {
+      final stripped = withRules(
+        [const MetaRule.builtin(BuiltinRule.nameUnderscore)],
+        strips: [
+          const StripPattern(
+            id: 's1',
+            name: '末尾の日付',
+            pattern: r'\s*\(\d{2}-\d{2}-\d{2}\)$',
+          ),
+        ],
+      );
+      expect(
+        WorkMetaDetector.detect(
+          fileName: '山田_題 (09-06-07).txt',
+          head: '',
+          rules: stripped,
+        ),
+        const WorkMeta(title: '題', author: '山田'),
+      );
+
+      final noStrip = withRules(
+        [const MetaRule.builtin(BuiltinRule.nameUnderscore)],
+        strips: [StripPattern.yotogiPrefix.copyWith(enabled: false)],
+      );
+      expect(
+        WorkMetaDetector.detect(
+          fileName: '00001_20140101_1200_題.txt',
+          head: '',
+          rules: noStrip,
+        ).author,
+        '00001',
+      );
+    });
+
+    test('どのルールにも当てはまらなければ作者不明・採用ルールなし', () {
+      final result = WorkMetaDetector.detectDetailed(
+        fileName: '題.txt',
+        head: '本文',
+      );
+      expect(result.meta, const WorkMeta(title: '題'));
+      expect(result.rule, isNull);
+    });
+  });
+
+  group('MetaRuleSet', () {
+    test('JSONに保存して読み戻せる', () {
+      final rules = MetaRuleSet.defaults.copyWith(
+        rules: [
+          const MetaRule.custom(
+            id: 'c1',
+            name: '自作',
+            target: RuleTarget.head,
+            pattern: '(?<author>x)',
+            enabled: false,
+          ),
+          ...MetaRuleSet.defaults.rules,
+        ],
+      );
+      expect(MetaRuleSet.fromJson(rules.toJson()), rules);
+    });
+
+    test('保存に無い組み込みルールは末尾に補う', () {
+      final restored = MetaRuleSet.fromJson(const {'rules': [], 'strips': []});
+      expect(restored, MetaRuleSet.defaults);
+    });
+
+    test('validatePattern は誤りを日本語で返す', () {
+      expect(validatePattern(r'^(?<author>.+)$'), isNull);
+      expect(validatePattern(''), isNotNull);
+      expect(validatePattern('(abc'), isNotNull);
     });
   });
 }

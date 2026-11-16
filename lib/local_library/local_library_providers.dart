@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_store.dart';
+import 'package:novelty/local_library/meta_rules.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -42,6 +43,32 @@ class LocalWorksNotifier extends AsyncNotifier<List<LocalWork>> {
     return result;
   }
 
+  /// 手修正した作品を除き、全作品の作者を読み取り直す。変わった件数を返す。
+  Future<int> redetectAll() async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    final changed = await store.redetectAll();
+    state = AsyncData(await store.loadWorks());
+    return changed;
+  }
+
+  /// 作品名・作者を手で修正する。
+  Future<void> editMeta(
+    String id, {
+    required String title,
+    required String? author,
+  }) async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.editWorkMeta(id, title: title, author: author);
+    state = AsyncData(await store.loadWorks());
+  }
+
+  /// 手修正を取り消し、自動判定に戻す。
+  Future<void> resetMeta(String id) async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.resetWorkMeta(id);
+    state = AsyncData(await store.loadWorks());
+  }
+
   /// 作品を削除し、一覧を更新する。
   Future<void> delete(Set<String> ids) async {
     final store = await ref.read(localLibraryStoreProvider.future);
@@ -49,6 +76,30 @@ class LocalWorksNotifier extends AsyncNotifier<List<LocalWork>> {
     state = AsyncData(await store.loadWorks());
     ref.invalidate(readingPositionsProvider);
   }
+}
+
+/// 作者の読み取りルール。
+final metaRulesProvider = AsyncNotifierProvider<MetaRulesNotifier, MetaRuleSet>(
+  MetaRulesNotifier.new,
+);
+
+/// 作者の読み取りルールを管理する。変更はすぐに保存する。
+class MetaRulesNotifier extends AsyncNotifier<MetaRuleSet> {
+  @override
+  Future<MetaRuleSet> build() async {
+    final store = await ref.watch(localLibraryStoreProvider.future);
+    return store.loadRules();
+  }
+
+  /// ルール一式を差し替えて保存する。
+  Future<void> save(MetaRuleSet rules) async {
+    state = AsyncData(rules);
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.saveRules(rules);
+  }
+
+  /// 初期設定に戻す。
+  Future<void> resetToDefaults() => save(MetaRuleSet.defaults);
 }
 
 /// 作品ごとの読書位置（しおり）。

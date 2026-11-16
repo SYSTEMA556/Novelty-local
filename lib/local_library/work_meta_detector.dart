@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:novelty/local_library/meta_rules.dart';
 
 /// テキストファイルから読み取った作品情報。
 @immutable
@@ -23,15 +24,26 @@ class WorkMeta {
   String toString() => 'WorkMeta(title: $title, author: $author)';
 }
 
+/// 読み取り結果と、採用されたルール。
+@immutable
+class DetectionResult {
+  /// コンストラクタ。
+  const DetectionResult(this.meta, this.rule, this.cleanedName);
+
+  /// 読み取った作品情報。
+  final WorkMeta meta;
+
+  /// 採用されたルール（どれも当てはまらなければ null）。
+  final MetaRule? rule;
+
+  /// 除去パターンを適用した後のファイル名（拡張子なし）。
+  final String cleanedName;
+}
+
 /// ファイル名と本文の冒頭から、作品名と作者名を読み取る。
 ///
-/// 次の順で判定し、最初に見つかったものを採用する。
-/// 1. 夜伽形式：冒頭の `作者:〇〇` 行（作品名は `「〇〇」` 行）
-/// 2. 青空文庫形式：冒頭の `作者名／訳者名訳` 行、または
-///    区切り線（`-----`）より前の見出し行
-/// 3. ファイル名：`作者_作品`・`作者-作品`・`[作者] 作品`・`【作者】作品`
-///
-/// 夜伽のファイル名の先頭にある `番号_日付_時刻_` は取り除く。
+/// [MetaRuleSet] のルールを上から順に試し、最初に当てはまったものを採用する。
+/// どれも当てはまらなければ、除去パターン適用後のファイル名を作品名とする。
 class WorkMetaDetector {
   WorkMetaDetector._();
 
@@ -40,9 +52,6 @@ class WorkMetaDetector {
 
   /// 作者名として認める最大文字数（誤判定防止）。
   static const int maxAuthorLength = 30;
-
-  // 夜伽のファイル名の先頭：番号_YYYYMMDD_HHMM_
-  static final _yotogiPrefix = RegExp(r'^\d+_\d{8}_\d{4}_');
 
   // 夜伽の情報欄の作者行
   static final _yotogiAuthor = RegExp(r'^\s*作者\s*[:：]\s*(.+?)\s*$');
@@ -59,39 +68,114 @@ class WorkMetaDetector {
   // HTMLタグだけの行（夜伽の <div> など）
   static final _tagLine = RegExp(r'^\s*</?[a-zA-Z][^>]*>\s*$');
 
-  // ファイル名の「作者 区切り 作品」パターン（優先順）
-  static final _filenamePatterns = [
+  // ファイル名の「作者 区切り 作品」パターン
+  static final _bracketPatterns = [
     RegExp(r'^\[(.+?)\]\s*(.+)$'),
     RegExp(r'^【(.+?)】\s*(.+)$'),
-    RegExp(r'^(.+?)\s*[_＿]\s*(.+)$'),
-    RegExp(r'^(.+?)\s*[-－]\s*(.+)$'),
   ];
+  static final _underscorePattern = RegExp(r'^(.+?)\s*[_＿]\s*(.+)$');
+  static final _dashPattern = RegExp(r'^(.+?)\s*[-－]\s*(.+)$');
 
   /// 作品情報を読み取る。
-  static WorkMeta detect({required String fileName, required String head}) {
-    final baseName = _stripExtension(fileName);
-    final isYotogi = _yotogiPrefix.hasMatch(baseName);
-    final nameWithoutPrefix = baseName.replaceFirst(_yotogiPrefix, '');
+  static WorkMeta detect({
+    required String fileName,
+    required String head,
+    MetaRuleSet rules = MetaRuleSet.defaults,
+  }) => detectDetailed(fileName: fileName, head: head, rules: rules).meta;
 
+  /// 作品情報を読み取り、採用されたルールも返す（設定画面の試し欄用）。
+  static DetectionResult detectDetailed({
+    required String fileName,
+    required String head,
+    MetaRuleSet rules = MetaRuleSet.defaults,
+  }) {
+    final cleaned = cleanFileName(fileName, rules.strips);
     final lines = _headLines(head);
 
-    final fromYotogi = _detectYotogi(lines);
-    if (fromYotogi != null) {
-      return WorkMeta(
-        title: fromYotogi.title.isEmpty ? nameWithoutPrefix : fromYotogi.title,
-        author: fromYotogi.author,
-      );
+    for (final rule in rules.rules) {
+      if (!rule.enabled) continue;
+      final meta = _applyRule(rule, cleaned, lines);
+      if (meta != null) return DetectionResult(meta, rule, cleaned);
     }
+    return DetectionResult(WorkMeta(title: cleaned), null, cleaned);
+  }
 
-    final fromAozora = _detectAozora(lines);
-    if (fromAozora != null) return fromAozora;
-
-    // 夜伽の番号付きファイル名は作品名に区切り文字を含みうるため分割しない
-    if (!isYotogi) {
-      final fromName = _detectFromFileName(nameWithoutPrefix);
-      if (fromName != null) return fromName;
+  /// 拡張子を外し、有効な除去パターンを適用したファイル名を返す。
+  ///
+  /// すべて取り除かれて空になる場合は、拡張子を外しただけの名前を返す。
+  static String cleanFileName(String fileName, List<StripPattern> strips) {
+    final base = _stripExtension(fileName);
+    var cleaned = base;
+    for (final strip in strips) {
+      if (!strip.enabled) continue;
+      final regex = _tryCompile(strip.pattern);
+      if (regex == null) continue;
+      cleaned = cleaned.replaceAll(regex, '');
     }
-    return WorkMeta(title: nameWithoutPrefix);
+    cleaned = cleaned.trim();
+    return cleaned.isEmpty ? base : cleaned;
+  }
+
+  static WorkMeta? _applyRule(
+    MetaRule rule,
+    String cleaned,
+    List<String> lines,
+  ) {
+    switch (rule.builtin) {
+      case BuiltinRule.yotogi:
+        final meta = _detectYotogi(lines);
+        if (meta == null) return null;
+        return meta.title.isEmpty
+            ? WorkMeta(title: cleaned, author: meta.author)
+            : meta;
+      case BuiltinRule.aozora:
+        return _detectAozora(lines);
+      case BuiltinRule.nameBracket:
+        return _splitName(cleaned, _bracketPatterns);
+      case BuiltinRule.nameUnderscore:
+        return _splitName(cleaned, [_underscorePattern]);
+      case BuiltinRule.nameDash:
+        return _splitName(cleaned, [_dashPattern]);
+      case null:
+        return _applyCustom(rule, cleaned, lines);
+    }
+  }
+
+  /// 自作ルールを適用する。
+  ///
+  /// 名前付きグループ `author`・`title` の値を使う。
+  /// 作者も作品名も取れなければ当てはまらなかったものとみなす。
+  static WorkMeta? _applyCustom(
+    MetaRule rule,
+    String cleaned,
+    List<String> lines,
+  ) {
+    final regex = _tryCompile(rule.pattern, multiLine: true);
+    if (regex == null) return null;
+    final input = rule.target == RuleTarget.fileName
+        ? cleaned
+        : lines.join('\n');
+    final match = regex.firstMatch(input);
+    if (match == null) return null;
+
+    String? group(String name) => match.groupNames.contains(name)
+        ? match.namedGroup(name)?.trim()
+        : null;
+
+    final author = _normalizeAuthor(group('author'));
+    final title = group('title');
+    final hasTitle = title != null && title.isNotEmpty;
+    if (author == null && !hasTitle) return null;
+    return WorkMeta(title: hasTitle ? title : cleaned, author: author);
+  }
+
+  static RegExp? _tryCompile(String pattern, {bool multiLine = false}) {
+    if (pattern.isEmpty) return null;
+    try {
+      return RegExp(pattern, multiLine: multiLine);
+    } on FormatException {
+      return null;
+    }
   }
 
   /// 作者名をグループ分け用に正規化する。
@@ -165,8 +249,8 @@ class WorkMetaDetector {
     return null;
   }
 
-  static WorkMeta? _detectFromFileName(String name) {
-    for (final pattern in _filenamePatterns) {
+  static WorkMeta? _splitName(String name, List<RegExp> patterns) {
+    for (final pattern in patterns) {
       final match = pattern.firstMatch(name);
       if (match == null) continue;
       final author = _normalizeAuthor(match.group(1));

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_store.dart';
+import 'package:novelty/local_library/meta_rules.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
@@ -193,6 +194,71 @@ void main() {
         p.join(store.rootDir.path, 'index.json'),
       ).readAsStringSync();
       expect(raw, contains('"metaVersion":${LocalWork.currentMetaVersion}'));
+    });
+  });
+
+  group('ルールと手修正', () {
+    test('ルールは未保存なら初期設定、保存すれば読み戻せる', () async {
+      expect(await store.loadRules(), MetaRuleSet.defaults);
+      final custom = MetaRuleSet.defaults.copyWith(
+        rules: [
+          const MetaRule.builtin(BuiltinRule.nameDash),
+          const MetaRule.builtin(BuiltinRule.nameUnderscore, enabled: false),
+        ],
+      );
+
+      await store.saveRules(custom);
+
+      expect(await store.loadRules(), MetaRuleSet.fromJson(custom.toJson()));
+    });
+
+    test('ルール変更後の再判定で作者が変わる', () async {
+      final path = writeSource('A_B-C.txt', utf8.encode('本文'));
+      await store.importFiles([path]);
+      expect((await store.loadWorks()).single.author, 'A');
+
+      await store.saveRules(
+        MetaRuleSet.defaults.copyWith(
+          rules: [const MetaRule.builtin(BuiltinRule.nameDash)],
+        ),
+      );
+      final changed = await store.redetectAll();
+
+      expect(changed, 1);
+      final work = (await store.loadWorks()).single;
+      expect(work.author, 'A_B');
+      expect(work.title, 'C');
+    });
+
+    test('手で修正した作品は再判定しない。取り消せば自動判定に戻る', () async {
+      final path = writeSource('山田_題.txt', utf8.encode('本文'));
+      await store.importFiles([path]);
+      final id = (await store.loadWorks()).single.id;
+
+      await store.editWorkMeta(id, title: '正しい題', author: '正しい作者');
+      await store.redetectAll();
+
+      var work = (await store.loadWorks()).single;
+      expect(work.title, '正しい題');
+      expect(work.author, '正しい作者');
+      expect(work.manualMeta, isTrue);
+
+      await store.resetWorkMeta(id);
+
+      work = (await store.loadWorks()).single;
+      expect(work.title, '題');
+      expect(work.author, '山田');
+      expect(work.manualMeta, isFalse);
+    });
+
+    test('作者欄を空にすると作者不明になる', () async {
+      final path = writeSource('山田_題.txt', utf8.encode('本文'));
+      await store.importFiles([path]);
+      final id = (await store.loadWorks()).single.id;
+
+      await store.editWorkMeta(id, title: '題', author: '  ');
+
+      expect((await store.loadWorks()).single.author, isNull);
     });
   });
 }

@@ -9,6 +9,7 @@ import 'package:novelty/local_library/work_meta_detector.dart';
 import 'package:novelty/screens/local_author_works_page.dart';
 import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
+import 'package:novelty/screens/local_meta_rules_page.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
 
 /// ローカル作品の並び順。
@@ -207,6 +208,27 @@ class LocalLibraryView extends HookConsumerWidget {
             tooltip: '取り込み',
             onPressed: () => unawaited(showLocalImportSheet(context, ref)),
           ),
+          PopupMenuButton<String>(
+            tooltip: 'その他',
+            onSelected: (value) {
+              switch (value) {
+                case 'rules':
+                  unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const LocalMetaRulesPage(),
+                      ),
+                    ),
+                  );
+                case 'redetect':
+                  unawaited(runRedetectAll(context, ref));
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rules', child: Text('作者の読み取りルール')),
+              PopupMenuItem(value: 'redetect', child: Text('全作品の作者を再判定')),
+            ],
+          ),
         ],
       ),
     );
@@ -285,7 +307,7 @@ class LocalLibraryView extends HookConsumerWidget {
                                 onTap: () =>
                                     unawaited(openLocalWork(context, work)),
                                 onLongPress: () => unawaited(
-                                  confirmDeleteLocalWork(context, ref, work),
+                                  showLocalWorkActions(context, ref, work),
                                 ),
                               );
                             },
@@ -341,6 +363,127 @@ class _AuthorList extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 作品の長押しメニュー（作者・作品名の修正、自動判定に戻す、削除）。
+Future<void> showLocalWorkActions(
+  BuildContext context,
+  WidgetRef ref,
+  LocalWork work,
+) {
+  return showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    builder: (sheetContext) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            title: Text(
+              work.title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(work.fileName),
+          ),
+          const Divider(height: 1),
+          ListTile(
+            leading: const Icon(Icons.edit_outlined),
+            title: const Text('作者・作品名を修正'),
+            onTap: () async {
+              Navigator.pop(sheetContext);
+              await showEditWorkMetaDialog(context, ref, work);
+            },
+          ),
+          if (work.manualMeta)
+            ListTile(
+              leading: const Icon(Icons.auto_fix_high),
+              title: const Text('自動判定に戻す'),
+              subtitle: const Text('手で直した内容を取り消し、ルールで読み取り直します'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await ref.read(localWorksProvider.notifier).resetMeta(work.id);
+              },
+            ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline),
+            title: const Text('削除'),
+            onTap: () async {
+              Navigator.pop(sheetContext);
+              await confirmDeleteLocalWork(context, ref, work);
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 作者・作品名の修正ダイアログ。保存すると再判定の対象外になる。
+Future<void> showEditWorkMetaDialog(
+  BuildContext context,
+  WidgetRef ref,
+  LocalWork work,
+) async {
+  final result = await showDialog<(String, String)>(
+    context: context,
+    builder: (_) => _EditWorkMetaDialog(work: work),
+  );
+  if (result == null) return;
+  final (title, author) = result;
+  await ref
+      .read(localWorksProvider.notifier)
+      .editMeta(work.id, title: title, author: author);
+}
+
+class _EditWorkMetaDialog extends HookWidget {
+  const _EditWorkMetaDialog({required this.work});
+
+  final LocalWork work;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = useTextEditingController(text: work.title);
+    final author = useTextEditingController(text: work.author ?? '');
+    useListenable(title);
+    final titleEmpty = title.text.trim().isEmpty;
+
+    return AlertDialog(
+      title: const Text('作者・作品名を修正'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: title,
+            decoration: InputDecoration(
+              labelText: '作品名',
+              errorText: titleEmpty ? '作品名を入力してください' : null,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: author,
+            decoration: const InputDecoration(
+              labelText: '作者',
+              helperText: '空欄にすると「作者不明」になります',
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: titleEmpty
+              ? null
+              : () => Navigator.pop(context, (title.text, author.text)),
+          child: const Text('保存'),
+        ),
+      ],
     );
   }
 }
@@ -415,6 +558,7 @@ class LocalWorkTile extends StatelessWidget {
     final author = work.author;
     final details = [
       if (showAuthor && author != null) author,
+      if (work.manualMeta) '手修正',
       formatCharCount(work.charCount),
       if (pos != null) '${(pos.progress * 100).round()}%',
       if (pos != null && showLastRead) formatDateTime(pos.updatedAt),
@@ -451,5 +595,6 @@ String formatCharCount(int count) {
 /// 日時を `YYYY/MM/DD HH:mm` 形式に整形する。
 String formatDateTime(DateTime t) {
   String two(int v) => v.toString().padLeft(2, '0');
-  return '${t.year}/${two(t.month)}/${two(t.day)} ${two(t.hour)}:${two(t.minute)}';
+  final date = '${t.year}/${two(t.month)}/${two(t.day)}';
+  return '$date ${two(t.hour)}:${two(t.minute)}';
 }

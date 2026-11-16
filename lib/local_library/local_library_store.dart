@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/local_library_models.dart';
+import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:path/path.dart' as p;
@@ -13,6 +14,7 @@ import 'package:path/path.dart' as p;
 /// 既存のデータベースとは独立して、次の構成でファイルに保存する。
 /// - `index.json`: 作品一覧
 /// - `positions.json`: 読書位置（しおり）
+/// - `rules.json`: 作者の読み取りルール
 /// - `texts/<id>.txt`: 本文（UTF-8・BOMなしに正規化）
 class LocalLibraryStore {
   /// コンストラクタ。
@@ -24,6 +26,8 @@ class LocalLibraryStore {
   File get _indexFile => File(p.join(rootDir.path, 'index.json'));
 
   File get _positionsFile => File(p.join(rootDir.path, 'positions.json'));
+
+  File get _rulesFile => File(p.join(rootDir.path, 'rules.json'));
 
   /// 本文の保存先ディレクトリ。
   Directory get textsDir => Directory(p.join(rootDir.path, 'texts'));
@@ -57,9 +61,91 @@ class LocalLibraryStore {
     if (works.every((w) => w.metaVersion >= LocalWork.currentMetaVersion)) {
       return works;
     }
-    final migrated = await _refreshMetaInBackground(works, textsDir.path);
+    final rules = await loadRules();
+    final migrated = await _refreshMetaInBackground(
+      works,
+      textsDir.path,
+      rules,
+      force: false,
+    );
     await saveWorks(migrated);
     return migrated;
+  }
+
+  /// 作者の読み取りルールを読み込む（未保存なら初期設定）。
+  Future<MetaRuleSet> loadRules() async {
+    if (!_rulesFile.existsSync()) return MetaRuleSet.defaults;
+    try {
+      final json = jsonDecode(await _rulesFile.readAsString());
+      return MetaRuleSet.fromJson(json as Map<String, dynamic>);
+    } on FormatException {
+      // 壊れていたら初期設定に戻す
+      return MetaRuleSet.defaults;
+    }
+  }
+
+  /// 作者の読み取りルールを保存する。
+  Future<void> saveRules(MetaRuleSet rules) =>
+      _writeAtomically(_rulesFile, jsonEncode(rules.toJson()));
+
+  /// 手で修正した作品を除き、全作品の作品名・作者を読み取り直す。
+  ///
+  /// 変わった件数を返す。
+  Future<int> redetectAll() async {
+    final works = await loadWorks();
+    final rules = await loadRules();
+    final updated = await _refreshMetaInBackground(
+      works,
+      textsDir.path,
+      rules,
+      force: true,
+    );
+    var changed = 0;
+    for (var i = 0; i < works.length; i++) {
+      if (works[i].title != updated[i].title ||
+          works[i].author != updated[i].author) {
+        changed++;
+      }
+    }
+    await saveWorks(updated);
+    return changed;
+  }
+
+  /// 作品名・作者を手で修正する（以後の再判定の対象外になる）。
+  Future<void> editWorkMeta(
+    String id, {
+    required String title,
+    required String? author,
+  }) async {
+    final works = await loadWorks();
+    final index = works.indexWhere((w) => w.id == id);
+    if (index < 0) return;
+    final trimmed = author?.trim();
+    works[index] = works[index].withMeta(
+      title: title.trim(),
+      author: trimmed == null || trimmed.isEmpty ? null : trimmed,
+      manual: true,
+    );
+    await saveWorks(works);
+  }
+
+  /// 手修正を取り消し、現在のルールで読み取り直す。
+  Future<void> resetWorkMeta(String id) async {
+    final works = await loadWorks();
+    final index = works.indexWhere((w) => w.id == id);
+    if (index < 0) return;
+    final rules = await loadRules();
+    final unlocked = works[index].withMeta(
+      title: works[index].title,
+      author: works[index].author,
+    );
+    works[index] = (await _refreshMetaInBackground(
+      [unlocked],
+      textsDir.path,
+      rules,
+      force: true,
+    )).single;
+    await saveWorks(works);
   }
 
   /// 作品一覧を保存する。
@@ -123,6 +209,7 @@ class LocalLibraryStore {
   }) async {
     await textsDir.create(recursive: true);
     final works = await loadWorks();
+    final rules = await loadRules();
     final knownIds = {for (final w in works) w.id};
     final textsPath = textsDir.path;
 
@@ -134,7 +221,12 @@ class LocalLibraryStore {
       final end = (start + batchSize).clamp(0, paths.length);
       final batch = paths.sublist(start, end);
       final known = Set<String>.of(knownIds);
-      final results = await _importBatchInBackground(batch, textsPath, known);
+      final results = await _importBatchInBackground(
+        batch,
+        textsPath,
+        known,
+        rules,
+      );
 
       for (final result in results) {
         final work = result.work;
@@ -179,13 +271,20 @@ Future<String> _encodeInBackground(Object data) =>
 Future<List<LocalWork>> _refreshMetaInBackground(
   List<LocalWork> works,
   String textsDirPath,
-) => Isolate.run(() => refreshWorkMeta(works, textsDirPath));
+  MetaRuleSet rules, {
+  required bool force,
+}) => Isolate.run(
+  () => refreshWorkMeta(works, textsDirPath, rules: rules, force: force),
+);
 
 Future<List<ImportItemResult>> _importBatchInBackground(
   List<String> paths,
   String textsDirPath,
   Set<String> knownIds,
-) => Isolate.run(() => importBatch(paths, textsDirPath, knownIds));
+  MetaRuleSet rules,
+) => Isolate.run(
+  () => importBatch(paths, textsDirPath, knownIds, rules: rules),
+);
 
 /// 作品一覧のJSONを解析する（Isolateから呼び出す）。
 @visibleForTesting
@@ -223,8 +322,9 @@ class ImportItemResult {
 List<ImportItemResult> importBatch(
   List<String> paths,
   String textsDirPath,
-  Set<String> knownIds,
-) {
+  Set<String> knownIds, {
+  MetaRuleSet rules = MetaRuleSet.defaults,
+}) {
   final now = DateTime.now();
   final results = <ImportItemResult>[];
   for (final path in paths) {
@@ -237,7 +337,11 @@ List<ImportItemResult> importBatch(
     try {
       final text = PlainTextNovelParser.decode(File(path).readAsBytesSync());
       File(p.join(textsDirPath, '$id.txt')).writeAsStringSync(text);
-      final meta = WorkMetaDetector.detect(fileName: fileName, head: text);
+      final meta = WorkMetaDetector.detect(
+        fileName: fileName,
+        head: text,
+        rules: rules,
+      );
       results.add(
         ImportItemResult.added(
           LocalWork(
@@ -258,21 +362,29 @@ List<ImportItemResult> importBatch(
   return results;
 }
 
-/// 古い規則で取り込んだ作品の作品名・作者を、本文冒頭から読み取り直す。
+/// 作品名・作者を本文冒頭から読み取り直す。
 ///
+/// 手で修正した作品は常に対象外。[force] が false なら、
+/// 古い規則で取り込んだ作品だけを読み取り直す。
 /// 別Isolateで実行するためトップレベル関数にしている。
 @visibleForTesting
-List<LocalWork> refreshWorkMeta(List<LocalWork> works, String textsDirPath) {
+List<LocalWork> refreshWorkMeta(
+  List<LocalWork> works,
+  String textsDirPath, {
+  MetaRuleSet rules = MetaRuleSet.defaults,
+  bool force = false,
+}) {
   return [
     for (final work in works)
-      if (work.metaVersion >= LocalWork.currentMetaVersion)
+      if (work.manualMeta ||
+          (!force && work.metaVersion >= LocalWork.currentMetaVersion))
         work
       else
-        _refreshOne(work, textsDirPath),
+        _refreshOne(work, textsDirPath, rules),
   ];
 }
 
-LocalWork _refreshOne(LocalWork work, String textsDirPath) {
+LocalWork _refreshOne(LocalWork work, String textsDirPath, MetaRuleSet rules) {
   // 冒頭の解析に必要な分だけ読む（UTF-8は1文字最大4バイト）
   const headBytes = WorkMetaDetector.headLength * 4;
   final file = File(p.join(textsDirPath, '${work.id}.txt'));
@@ -285,6 +397,10 @@ LocalWork _refreshOne(LocalWork work, String textsDirPath) {
       raf.closeSync();
     }
   }
-  final meta = WorkMetaDetector.detect(fileName: work.fileName, head: head);
+  final meta = WorkMetaDetector.detect(
+    fileName: work.fileName,
+    head: head,
+    rules: rules,
+  );
   return work.withMeta(title: meta.title, author: meta.author);
 }

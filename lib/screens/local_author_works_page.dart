@@ -49,7 +49,7 @@ class LocalAuthorWorksPage extends ConsumerWidget {
                   showAuthor: false,
                   onTap: () => unawaited(openLocalWork(context, work)),
                   onLongPress: () =>
-                      unawaited(confirmDeleteLocalWork(context, ref, work)),
+                      unawaited(showLocalWorkActions(context, ref, work)),
                 );
               },
             ),
