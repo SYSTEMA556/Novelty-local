@@ -11,9 +11,9 @@ import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/font_family.dart';
 import 'package:novelty/utils/line_length.dart';
 import 'package:novelty/utils/settings_provider.dart';
-import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/utils/tategaki_converter.dart';
 import 'package:novelty/widgets/novel_content_view.dart';
+import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:tategaki/tategaki.dart';
 
 /// 小説のコンテンツを表示するウィジェット。

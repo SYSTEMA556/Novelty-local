@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// [TategakiText] を外から操作するためのコントローラー
+/// `TategakiText` を外から操作するためのコントローラー
 ///
 /// 縦書きスクロール表示は列を必要な分だけ計算するため、スクロール量では
 /// 全体のどこにいるかがわからない。代わりに「何番目の要素へ移動するか」で
@@ -14,7 +14,7 @@ class TategakiTextController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 保留中の移動先を取り出す（[TategakiText] の内部で使う）
+  /// 保留中の移動先を取り出す（`TategakiText` の内部で使う）
   int? takePendingElement() {
     final element = _pendingElement;
     _pendingElement = null;

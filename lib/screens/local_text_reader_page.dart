@@ -5,16 +5,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
-import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
+import 'package:novelty/widgets/reader_navigation.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 /// 端末内のテキストファイルを選択し、読書画面で開く。
 ///
