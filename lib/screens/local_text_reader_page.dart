@@ -6,6 +6,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
@@ -122,7 +123,23 @@ class LocalTextReaderPage extends HookConsumerWidget {
 
     return Scaffold(
       appBar: isAppBarVisible.value
-          ? AppBar(title: Text(title, overflow: TextOverflow.ellipsis))
+          ? AppBar(
+              title: Text(title, overflow: TextOverflow.ellipsis),
+              actions: [
+                // 読みながら文字サイズ・行の長さなどを変えられるようにする
+                IconButton(
+                  icon: const Icon(Icons.tune),
+                  tooltip: '閲覧設定',
+                  onPressed: () => unawaited(
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const ReaderSettingsPage(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
           : null,
       body: GestureDetector(
         behavior: HitTestBehavior.translucent,

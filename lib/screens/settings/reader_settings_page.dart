@@ -144,6 +144,7 @@ class ReaderSettingsPage extends ConsumerWidget {
             ],
           ),
         ),
+        ..._buildLineLengthTiles(context, ref, settings),
         SwitchListTile(
           title: const Text('縦書き'),
           value: settings.isVertical,
@@ -211,5 +212,57 @@ class ReaderSettingsPage extends ConsumerWidget {
         ),
       ],
     );
+  }
+
+  /// 1行の文字数の上限（縦書きは列の高さ、横書きは行の幅）。
+  List<Widget> _buildLineLengthTiles(
+    BuildContext context,
+    WidgetRef ref,
+    AppSettings settings,
+  ) {
+    Future<void> save(int chars) async {
+      try {
+        await ref.read(settingsProvider.notifier).setMaxLineChars(chars);
+      } on Exception catch (e, stackTrace) {
+        debugPrint('Failed to save max line chars: $e\n$stackTrace');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('1行の文字数の保存に失敗しました'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
+    final limited = settings.maxLineChars > 0;
+    final chars = settings.maxLineChars
+        .clamp(Settings.minLineChars, Settings.maxLineCharsLimit)
+        .toDouble();
+    return [
+      SwitchListTile(
+        title: const Text('1行の文字数を制限'),
+        subtitle: Text(
+          settings.isVertical
+              ? '縦書きの1行（列）が画面いっぱいに伸びないようにします'
+              : '横書きの1行が画面いっぱいに伸びないようにします',
+        ),
+        value: limited,
+        onChanged: (value) => save(value ? 40 : 0),
+      ),
+      if (limited)
+        ListTile(
+          title: Text('1行の文字数: ${settings.maxLineChars} 字'),
+          subtitle: Slider(
+            value: chars,
+            min: Settings.minLineChars.toDouble(),
+            max: Settings.maxLineCharsLimit.toDouble(),
+            divisions: Settings.maxLineCharsLimit - Settings.minLineChars,
+            label: '${chars.round()} 字',
+            onChanged: (value) => save(value.round()),
+          ),
+        ),
+    ];
   }
 }

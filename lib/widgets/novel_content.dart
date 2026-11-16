@@ -9,6 +9,7 @@ import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/font_family.dart';
+import 'package:novelty/utils/line_length.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/utils/tategaki_converter.dart';
 import 'package:novelty/widgets/novel_content_view.dart';
@@ -181,6 +182,12 @@ class NovelContentBody extends HookWidget {
               bottom: 16,
             );
 
+            // 1行の長さの上限（設定で制限している場合のみ）
+            final lineLimit = lineExtentLimit(
+              maxChars: settingsData.maxLineChars,
+              fontSize: settingsData.fontSize,
+            );
+
             // 横書きモード用（縦スクロール）: 下端のホームジェスチャー領域を確保
             final horizontalModePadding = EdgeInsets.only(
               left: 16,
@@ -195,6 +202,13 @@ class NovelContentBody extends HookWidget {
               if (settingsData.isPageFlip) {
                 return LayoutBuilder(
                   builder: (context, constraints) {
+                    // 列の高さを上限までに抑え、余りは下の余白にする
+                    // （ページ全体はめくり操作を受け付けたままにするため、
+                    // 領域は縮めずに余白で調整する）
+                    final available =
+                        constraints.maxHeight - verticalModePadding.vertical;
+                    final extra =
+                        available - clampLineExtent(available, lineLimit);
                     return DefaultTextStyle(
                       style: textStyle,
                       child: TategakiTextPaged(
@@ -204,7 +218,9 @@ class NovelContentBody extends HookWidget {
                         elements,
                         width: constraints.maxWidth,
                         height: constraints.maxHeight,
-                        padding: verticalModePadding,
+                        padding: verticalModePadding.copyWith(
+                          bottom: verticalModePadding.bottom + extra,
+                        ),
                       ),
                     );
                   },
@@ -227,7 +243,11 @@ class NovelContentBody extends HookWidget {
                           key: PageStorageKey<String>(
                             'novel_vertical_${workId}_$episode',
                           ),
-                          height: constraints.maxHeight,
+                          // 列の高さを上限までに抑える（上詰め）
+                          height: clampLineExtent(
+                            constraints.maxHeight,
+                            lineLimit,
+                          ),
                         ),
                       );
                     },
@@ -241,12 +261,24 @@ class NovelContentBody extends HookWidget {
                 'novel_horizontal_${workId}_$episode',
               ),
               padding: horizontalModePadding,
-              child: RepaintBoundary(
-                child: DefaultTextStyle(
-                  style: textStyle,
-                  child: NovelContentView(
-                    elements: contentData,
-                    isRubyEnabled: settingsData.isRubyEnabled,
+              // 行の幅を上限までに抑え、画面の中央に置く
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: lineLimit ?? double.infinity,
+                  ),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: RepaintBoundary(
+                      child: DefaultTextStyle(
+                        style: textStyle,
+                        child: NovelContentView(
+                          elements: contentData,
+                          isRubyEnabled: settingsData.isRubyEnabled,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ),

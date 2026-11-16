@@ -17,6 +17,7 @@ class AppSettings {
     required this.isPageFlip,
     required this.isRubyEnabled,
     this.isOfflineMode = false,
+    this.maxLineChars = 0,
   });
 
   /// テーマモード (system, light, dark)。
@@ -49,6 +50,12 @@ class AppSettings {
   /// `true` の場合、ネットワーク通信を行わず、ダウンロード済みのコンテンツのみを利用します。
   final bool isOfflineMode;
 
+  /// 1行の文字数の上限（0 なら制限なし）。
+  ///
+  /// 画面いっぱいだと1行が長すぎて読みにくい場合に、
+  /// 縦書きは列の高さ、横書きは行の幅をこの文字数分に抑える。
+  final int maxLineChars;
+
   /// 設定をコピーするメソッド。
   AppSettings copyWith({
     ThemeMode? themeMode,
@@ -59,6 +66,7 @@ class AppSettings {
     bool? isPageFlip,
     bool? isRubyEnabled,
     bool? isOfflineMode,
+    int? maxLineChars,
   }) {
     return AppSettings(
       themeMode: themeMode ?? this.themeMode,
@@ -69,6 +77,7 @@ class AppSettings {
       isPageFlip: isPageFlip ?? this.isPageFlip,
       isRubyEnabled: isRubyEnabled ?? this.isRubyEnabled,
       isOfflineMode: isOfflineMode ?? this.isOfflineMode,
+      maxLineChars: maxLineChars ?? this.maxLineChars,
     );
   }
 }
@@ -84,6 +93,13 @@ class Settings extends _$Settings {
   static const _isPageFlipKey = 'is_page_flip';
   static const _isRubyEnabledKey = 'is_ruby_enabled';
   static const _isOfflineModeKey = 'is_offline_mode';
+  static const _maxLineCharsKey = 'max_line_chars';
+
+  /// 1行の文字数の上限として選べる最小値。
+  static const int minLineChars = 15;
+
+  /// 1行の文字数の上限として選べる最大値。
+  static const int maxLineCharsLimit = 60;
 
   /// ルビ表示時の最小行間。
   ///
@@ -115,6 +131,7 @@ class Settings extends _$Settings {
     final isPageFlip = await repo.getBool(_isPageFlipKey) ?? false;
     final isRubyEnabled = await repo.getBool(_isRubyEnabledKey) ?? true;
     final isOfflineMode = await repo.getBool(_isOfflineModeKey) ?? false;
+    final maxLineChars = await repo.getInt(_maxLineCharsKey) ?? 0;
 
     return AppSettings(
       themeMode: ThemeMode.values[themeModeIndex],
@@ -125,7 +142,30 @@ class Settings extends _$Settings {
       isPageFlip: isPageFlip,
       isRubyEnabled: isRubyEnabled,
       isOfflineMode: isOfflineMode,
+      maxLineChars: maxLineChars,
     );
+  }
+
+  /// 1行の文字数の上限を設定するメソッド（0 なら制限なし）。
+  Future<void> setMaxLineChars(int chars) async {
+    if (!state.hasValue) {
+      throw StateError('Settings are not loaded');
+    }
+
+    try {
+      final repo = await _repo;
+      final success = await repo.setInt(_maxLineCharsKey, chars);
+      if (!success) {
+        throw Exception('Failed to save max line chars setting');
+      }
+      state = AsyncData(state.value!.copyWith(maxLineChars: chars));
+    } catch (e, stackTrace) {
+      debugPrint(
+        'Error saving max line chars setting: $e\nStack trace: $stackTrace',
+      );
+      state = AsyncError(e, stackTrace);
+      rethrow;
+    }
   }
 
   /// テーマモードを設定するメソッド。
