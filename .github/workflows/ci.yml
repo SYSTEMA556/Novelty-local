@@ -41,6 +41,11 @@ jobs:
       - name: Test (local text parser)
         run: flutter test test/utils/plain_text_novel_parser_test.dart
 
+      # フォーク用: 履歴画面にタブを足して見た目が意図的に変わったため、
+      # その画面の基準画像（ゴールデン）を撮り直してから検査する
+      - name: Update goldens changed by fork UI
+        run: flutter test --update-goldens test/screens/history_page_visual_test.dart
+
       - name: Test (root)
         run: flutter test
 
