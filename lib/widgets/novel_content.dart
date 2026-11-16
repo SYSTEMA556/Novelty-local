@@ -29,6 +29,10 @@ class NovelContent extends HookConsumerWidget {
     this.isAppBarVisible = false,
     this.onMenuTap,
     this.onOverflow,
+    this.navigation,
+    this.highlightStart,
+    this.highlightEnd,
+    this.safeBottom = true,
     super.key,
   });
 
@@ -57,6 +61,18 @@ class NovelContent extends HookConsumerWidget {
   /// ページボタンで話の端を越えようとしたときの処理（1: 次の話、-1: 前の話）。
   final ValueChanged<int>? onOverflow;
 
+  /// 全体のどこにいるかの表示・シークバーでの移動（使わなければ null）。
+  final ReaderNavigation? navigation;
+
+  /// 背景色を付ける範囲の開始（本文位置。読み上げ中の文など）。
+  final int? highlightStart;
+
+  /// 背景色を付ける範囲の終了（本文位置、含まない）。
+  final int? highlightEnd;
+
+  /// 下のセーフエリアを本文側で取るか（下に別のバーを置く場合は false）。
+  final bool safeBottom;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final settings = ref.watch(settingsProvider);
@@ -71,6 +87,7 @@ class NovelContent extends HookConsumerWidget {
 
     return SafeArea(
       top: !isAppBarVisible, // AppBarが表示されている場合は上は不要
+      bottom: safeBottom,
       child: NovelContentBody(
         source: source,
         workId: workId,
@@ -79,6 +96,9 @@ class NovelContent extends HookConsumerWidget {
         content: contentAsync,
         onMenuTap: onMenuTap,
         onOverflow: onOverflow,
+        navigation: navigation,
+        highlightStart: highlightStart,
+        highlightEnd: highlightEnd,
       ),
     );
   }

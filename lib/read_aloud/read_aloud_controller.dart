@@ -70,6 +70,7 @@ class ReadAloudController extends ChangeNotifier {
     required this.document,
     SpeechEngine? engine,
     this.onPositionChanged,
+    this.onCompleted,
   }) : _engine = engine ?? FlutterTtsEngine();
 
   /// 読み上げる本文。
@@ -77,6 +78,10 @@ class ReadAloudController extends ChangeNotifier {
 
   /// 読む文が変わったとき・止めたときに呼ばれる（読み上げ位置の保存用）。
   final void Function(SpeechSegment segment)? onPositionChanged;
+
+  /// 最後の文まで読み終えたときに呼ばれる（次の話へ進むのに使う）。
+  /// 止めた・一時停止した場合は呼ばれない。
+  final VoidCallback? onCompleted;
 
   final SpeechEngine _engine;
 
@@ -191,6 +196,7 @@ class ReadAloudController extends ChangeNotifier {
         // 最後まで読んだ
         _status = ReadAloudStatus.stopped;
         notifyListeners();
+        onCompleted?.call();
         return;
       }
       _index++;

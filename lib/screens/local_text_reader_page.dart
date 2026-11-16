@@ -13,8 +13,9 @@ import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
+import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
-import 'package:wakelock_plus/wakelock_plus.dart';
+import 'package:novelty/widgets/reader_position_bar.dart';
 
 /// 端末内のテキストファイルを選択し、読書画面で開く。
 ///
@@ -146,10 +147,13 @@ class LocalTextReaderPage extends HookConsumerWidget {
 
     // 読み上げ中（一時停止中を含む）は画面を消さない
     useEffect(() {
-      unawaited(_setWakelock(enabled: readAloud.isActive));
+      unawaited(setReaderWakelock(enabled: readAloud.isActive));
       return null;
     }, [readAloud.isActive]);
-    useEffect(() => () => unawaited(_setWakelock(enabled: false)), const []);
+    useEffect(
+      () => () => unawaited(setReaderWakelock(enabled: false)),
+      const [],
+    );
 
     // 全体のどこにいるかの表示とシークバー
     final navigation = useMemoized(ReaderNavigation.new);
@@ -183,7 +187,13 @@ class LocalTextReaderPage extends HookConsumerWidget {
                   icon: const Icon(Icons.record_voice_over_outlined),
                   tooltip: '読み上げ',
                   onPressed: () => unawaited(
-                    _startReadAloud(context, ref, readAloud),
+                    _startReadAloud(
+                      context,
+                      ref,
+                      readAloud,
+                      navigation,
+                      settingsValue,
+                    ),
                   ),
                 ),
                 // 読みながら文字サイズ・行の長さなどを変えられるようにする
@@ -213,7 +223,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
               child: Column(
                 children: [
                   Expanded(child: body),
-                  _PositionBar(
+                  ReaderPositionBar(
                     navigation: navigation,
                     isVertical: isVertical,
                     isPageFlip: settingsValue?.isPageFlip ?? false,
@@ -229,10 +239,10 @@ class LocalTextReaderPage extends HookConsumerWidget {
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: _PositionBar.height + 8,
+                bottom: ReaderPositionBar.height + 8,
                 child: SafeArea(
                   top: false,
-                  child: _ReadAloudBar(controller: readAloud),
+                  child: ReadAloudBar(controller: readAloud),
                 ),
               ),
           ],
@@ -246,12 +256,12 @@ class LocalTextReaderPage extends HookConsumerWidget {
     BuildContext context,
     WidgetRef ref,
     ReadAloudController controller,
+    ReaderNavigation navigation,
+    AppSettings? settings,
   ) async {
     final document = controller.document;
     if (document.segments.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('読み上げる文がありません')));
+      showNothingToReadAloud(context);
       return;
     }
     if (controller.status == ReadAloudStatus.paused) {
@@ -260,201 +270,35 @@ class LocalTextReaderPage extends HookConsumerWidget {
     }
 
     final id = workId;
-    final position = id == null
+    final ttsOffset = id == null
         ? null
-        : ref.read(readingPositionsProvider).value?[id];
-    final ttsOffset = position?.ttsOffset;
-
-    final choice = await showModalBottomSheet<int>(
-      context: context,
-      useSafeArea: true,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const ListTile(title: Text('どこから読み上げますか？')),
-            if (position != null)
-              ListTile(
-                leading: const Icon(Icons.bookmark_outline),
-                title: const Text('今読んでいる辺りから'),
-                subtitle: Text(
-                  'しおりの位置（${(position.progress * 100).round()}%）の目安',
-                ),
-                onTap: () => Navigator.pop(
-                  sheetContext,
-                  document.segmentIndexAtProgress(position.progress),
-                ),
-              ),
-            if (ttsOffset != null)
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: const Text('前回読み上げた文から'),
-                onTap: () => Navigator.pop(
-                  sheetContext,
-                  document.segmentIndexAt(ttsOffset),
-                ),
-              ),
-            ListTile(
-              leading: const Icon(Icons.first_page),
-              title: const Text('最初から'),
-              onTap: () => Navigator.pop(sheetContext, 0),
-            ),
-          ],
-        ),
-      ),
+        : ref.read(readingPositionsProvider).value?[id]?.ttsOffset;
+    final fraction = navigation.currentFraction(
+      isVertical: settings?.isVertical ?? false,
+      isPageFlip: settings?.isPageFlip ?? false,
     );
+
+    final choice = await showReadAloudStartSheet(context, [
+      ReadAloudStartOption(
+        icon: Icons.visibility_outlined,
+        title: '今見ている辺りから',
+        subtitle: '全体の${(fraction * 100).round()}%の位置',
+        segmentIndex: document.segmentIndexAtProgress(fraction),
+      ),
+      if (ttsOffset != null)
+        ReadAloudStartOption(
+          icon: Icons.history,
+          title: '前回読み上げた文から',
+          segmentIndex: document.segmentIndexAt(ttsOffset),
+        ),
+      const ReadAloudStartOption(
+        icon: Icons.first_page,
+        title: '最初から',
+        segmentIndex: 0,
+      ),
+    ]);
     if (choice == null) return;
     await controller.playFrom(choice);
-  }
-}
-
-/// 画面を消さない設定を切り替える（失敗しても読書は続けられるため無視する）。
-Future<void> _setWakelock({required bool enabled}) async {
-  try {
-    await WakelockPlus.toggle(enable: enabled);
-  } on Object catch (e) {
-    debugPrint('Failed to toggle wakelock: $e');
-  }
-}
-
-/// 本文の下に出す、今のページ（位置）とシークバー。
-class _PositionBar extends HookWidget {
-  const _PositionBar({
-    required this.navigation,
-    required this.isVertical,
-    required this.isPageFlip,
-    this.textColor,
-  });
-
-  /// バーの高さ。
-  static const double height = 48;
-
-  final ReaderNavigation navigation;
-  final bool isVertical;
-  final bool isPageFlip;
-
-  /// 色調の文字色（端末に合わせる場合は null）。
-  final Color? textColor;
-
-  @override
-  Widget build(BuildContext context) {
-    final paged = isVertical && isPageFlip;
-    final page = useValueListenable(navigation.currentPage);
-    final pageCount = useValueListenable(navigation.pageCount);
-    final progress = useValueListenable(navigation.progress);
-    // 指で動かしている間の値（離したときに移動する）
-    final dragging = useState<double?>(null);
-
-    final double max;
-    final double value;
-    final String label;
-    if (paged) {
-      max = pageCount > 1 ? (pageCount - 1).toDouble() : 1;
-      final current = (dragging.value ?? page.toDouble()).clamp(0.0, max);
-      value = current;
-      label = pageCount == 0
-          ? ''
-          : '${current.round() + 1} / $pageCount';
-    } else {
-      max = 1;
-      value = (dragging.value ?? progress).clamp(0.0, 1.0);
-      label = '${(value * 100).round()}%';
-    }
-    final enabled = !paged || pageCount > 1;
-
-    return SizedBox(
-      height: height,
-      child: Row(
-        children: [
-          const SizedBox(width: 8),
-          Expanded(
-            // 縦書きは右から左へ読み進めるため、シークバーも右から左にする
-            child: Directionality(
-              textDirection: isVertical ? TextDirection.rtl : TextDirection.ltr,
-              child: Slider(
-                value: value,
-                max: max,
-                divisions: paged && pageCount > 1 ? pageCount - 1 : null,
-                label: label,
-                onChanged: enabled ? (v) => dragging.value = v : null,
-                onChangeEnd: enabled
-                    ? (v) {
-                        dragging.value = null;
-                        if (paged) {
-                          navigation.jumpToPage(v.round());
-                        } else {
-                          navigation.seek(v, isVertical: isVertical);
-                        }
-                      }
-                    : null,
-              ),
-            ),
-          ),
-          SizedBox(
-            width: 88,
-            child: Text(
-              label,
-              textAlign: TextAlign.center,
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(color: textColor),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 読み上げ中に画面下に出す操作ボタン。
-class _ReadAloudBar extends StatelessWidget {
-  const _ReadAloudBar({required this.controller});
-
-  final ReadAloudController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final total = controller.document.segments.length;
-    return Material(
-      elevation: 4,
-      borderRadius: BorderRadius.circular(28),
-      color: Theme.of(context).colorScheme.surfaceContainerHigh,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        child: Row(
-          children: [
-            const SizedBox(width: 8),
-            Text(
-              '${controller.index + 1} / $total',
-              style: Theme.of(context).textTheme.labelMedium,
-            ),
-            const Spacer(),
-            IconButton(
-              icon: const Icon(Icons.skip_previous),
-              tooltip: '前の文',
-              onPressed: () => unawaited(controller.previous()),
-            ),
-            IconButton.filled(
-              icon: Icon(controller.isPlaying ? Icons.pause : Icons.play_arrow),
-              tooltip: controller.isPlaying ? '一時停止' : '再開',
-              onPressed: () => unawaited(
-                controller.isPlaying ? controller.pause() : controller.resume(),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Icons.skip_next),
-              tooltip: '次の文',
-              onPressed: () => unawaited(controller.next()),
-            ),
-            IconButton(
-              icon: const Icon(Icons.stop),
-              tooltip: '停止',
-              onPressed: () => unawaited(controller.stop()),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

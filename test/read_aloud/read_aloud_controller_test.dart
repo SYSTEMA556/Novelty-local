@@ -120,4 +120,24 @@ void main() {
     expect(controller.status, ReadAloudStatus.stopped);
     expect(reported.last, 8);
   });
+
+  test('最後まで読むと onCompleted が呼ばれ、停止では呼ばれない', () async {
+    var completed = 0;
+    final c = ReadAloudController(
+      document: SpeechDocument.fromElements([PlainText('一文目。二文目。')]),
+      engine: engine,
+      onCompleted: () => completed++,
+    );
+    addTearDown(c.dispose);
+
+    unawaited(c.playFrom(0));
+    await pumpEventQueue();
+    await c.stop();
+    expect(completed, 0);
+
+    unawaited(c.playFrom(1));
+    await pumpEventQueue();
+    await engine.finish();
+    expect(completed, 1);
+  });
 }

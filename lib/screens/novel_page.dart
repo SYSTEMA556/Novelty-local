@@ -3,13 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/models/episode.dart';
 import 'package:novelty/models/novel_info.dart';
+import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/repositories/novel_repository.dart';
+import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/sites/novel_source.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
+import 'package:novelty/widgets/read_aloud_bar.dart';
+import 'package:novelty/widgets/reader_navigation.dart';
+import 'package:novelty/widgets/reader_position_bar.dart';
 
 /// 小説のページを表示するウィジェット。
 class NovelPage extends HookConsumerWidget {
@@ -49,6 +56,46 @@ class NovelPage extends HookConsumerWidget {
 
     // AppBarの表示状態を管理（本文に集中できるよう初期状態は非表示）
     final isAppBarVisible = useState(false);
+
+    // 話ごとの位置表示・シークバー（PageViewは前後の話を組み直すため、
+    // 話の番号ごとに持ち、画面を閉じるときにまとめて片付ける）
+    final navigations = useMemoized(() => <int, ReaderNavigation>{});
+    useEffect(
+      () => () {
+        for (final navigation in navigations.values) {
+          navigation.dispose();
+        }
+      },
+      const [],
+    );
+    ReaderNavigation navigationFor(int ep) =>
+        navigations.putIfAbsent(ep, ReaderNavigation.new);
+
+    // 読み上げ（読み終えたら次の話へ進んで読み続ける）
+    final readAloud = useState<ReadAloudController?>(null);
+    final readingEpisode = useState<int?>(null);
+    useListenable(readAloud.value);
+    useEffect(() => () => readAloud.value?.dispose(), const []);
+    final isReading = readAloud.value?.isActive ?? false;
+    // 読み上げ中（一時停止中を含む）は画面を消さない
+    useEffect(() {
+      unawaited(setReaderWakelock(enabled: isReading));
+      return null;
+    }, [isReading]);
+    useEffect(
+      () => () => unawaited(setReaderWakelock(enabled: false)),
+      const [],
+    );
+    final settingsValue = ref.watch(settingsProvider).value;
+    useEffect(() {
+      readAloud.value?.setVoice(
+        rate: settingsValue?.ttsRate ?? 0.5,
+        pitch: settingsValue?.ttsPitch ?? 1,
+      );
+      return null;
+    }, [readAloud.value, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
+    // 読み終えたときの処理（毎回最新の状態を見るよう ref で持つ）
+    final advanceRef = useRef<VoidCallback?>(null);
 
     // 最初の履歴追加（novelInfoが読み込まれたら実行）
     useEffect(() {
@@ -120,6 +167,111 @@ class NovelPage extends HookConsumerWidget {
           return null;
         }, [itemCount]);
 
+        String? revisedFor(int ep) =>
+            (ep == episode && revised != null) ? revised : episodeMap[ep];
+
+        Future<List<NovelContentElement>?> loadEpisode(int ep) async {
+          try {
+            return await ref.read(
+              novelContentProvider(
+                source: source,
+                workId: workId,
+                episode: ep,
+                revised: revisedFor(ep),
+              ).future,
+            );
+          } on Object catch (e) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('第$ep話を読み込めませんでした: $e')),
+              );
+            }
+            return null;
+          }
+        }
+
+        // 第 ep 話を [startAt] の文から読み上げる
+        Future<void> startReading(
+          int ep,
+          int Function(SpeechDocument document) startAt,
+        ) async {
+          final elements = await loadEpisode(ep);
+          if (elements == null) return;
+          // 古い読み上げを先に止める（端末の音声合成は1つを共有するため）
+          readAloud.value?.dispose();
+          final document = SpeechDocument.fromElements(elements);
+          final controller = ReadAloudController(
+            document: document,
+            onCompleted: () => advanceRef.value?.call(),
+          )..setVoice(
+              rate: settingsValue?.ttsRate ?? 0.5,
+              pitch: settingsValue?.ttsPitch ?? 1,
+            );
+          readAloud.value = controller;
+          readingEpisode.value = ep;
+          if (document.segments.isEmpty) {
+            // 読む文が無い話（挿絵だけ等）は飛ばして次へ
+            advanceRef.value?.call();
+            return;
+          }
+          await controller.playFrom(startAt(document));
+        }
+
+        // 1話読み終えたら、画面も次の話へ送って続きを読む
+        advanceRef.value = () {
+          final ep = readingEpisode.value;
+          if (ep == null || ep >= totalEpisodes) return;
+          if (currentEpisode.value == ep && pageController.hasClients) {
+            unawaited(
+              pageController.nextPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              ),
+            );
+          }
+          unawaited(startReading(ep + 1, (_) => 0));
+        };
+
+        // 読み上げボタン：一時停止中なら再開、それ以外は開始位置を選ぶ
+        Future<void> onReadAloudPressed(AppSettings appSettings) async {
+          final current = readAloud.value;
+          if (current != null &&
+              current.status == ReadAloudStatus.paused &&
+              readingEpisode.value == currentEpisode.value) {
+            await current.resume();
+            return;
+          }
+          final ep = currentEpisode.value;
+          final elements = await loadEpisode(ep);
+          if (elements == null || !context.mounted) return;
+          final document = SpeechDocument.fromElements(elements);
+          if (document.segments.isEmpty) {
+            showNothingToReadAloud(context);
+            return;
+          }
+          final fraction = navigationFor(ep).currentFraction(
+            isVertical: appSettings.isVertical,
+            isPageFlip: appSettings.isPageFlip,
+          );
+          final choice = await showReadAloudStartSheet(context, [
+            ReadAloudStartOption(
+              icon: Icons.visibility_outlined,
+              title: '今見ている辺りから',
+              subtitle: 'この話の${(fraction * 100).round()}%の位置',
+              segmentIndex: document.segmentIndexAtProgress(fraction),
+            ),
+            const ReadAloudStartOption(
+              icon: Icons.first_page,
+              title: 'この話の最初から',
+              segmentIndex: 0,
+            ),
+          ]);
+          if (choice == null) return;
+          await startReading(ep, (_) => choice);
+        }
+
+        final speaking = isReading ? readAloud.value?.currentSegment : null;
+
         return settings.when(
           data: (settings) {
             return Scaffold(
@@ -139,9 +291,32 @@ class NovelPage extends HookConsumerWidget {
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),
+                      actions: [
+                        IconButton(
+                          icon: const Icon(Icons.record_voice_over_outlined),
+                          tooltip: '読み上げ',
+                          onPressed: () =>
+                              unawaited(onReadAloudPressed(settings)),
+                        ),
+                        // 読みながら文字サイズ・色調などを変えられるようにする
+                        IconButton(
+                          icon: const Icon(Icons.tune),
+                          tooltip: '閲覧設定',
+                          onPressed: () => unawaited(
+                            Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ReaderSettingsPage(),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     )
                   : null,
-              body: GestureDetector(
+              body: Column(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 // 本文タップでAppBarの表示/非表示を切り替える
                 onTap: () {
@@ -186,6 +361,16 @@ class NovelPage extends HookConsumerWidget {
                             episode: episodeNum,
                             revised: revisedDate,
                             isAppBarVisible: isAppBarVisible.value,
+                            // 下は位置表示のバーが場所を取る
+                            safeBottom: false,
+                            navigation: navigationFor(episodeNum),
+                            // 読み上げ中の話にだけ、読んでいる文の色を付ける
+                            highlightStart: episodeNum == readingEpisode.value
+                                ? speaking?.start
+                                : null,
+                            highlightEnd: episodeNum == readingEpisode.value
+                                ? speaking?.end
+                                : null,
                             // 中央タップでバーの表示を切り替え、
                             // 端のタップはページボタンにする
                             onMenuTap: () =>
@@ -212,8 +397,31 @@ class NovelPage extends HookConsumerWidget {
                     ),
                     // 縦書きモード時、ホームジェスチャーとの競合を防ぐためシールドを表示
                     if (settings.isVertical) const GestureShield(),
+                    // 読み上げ中（一時停止中を含む）は操作ボタンを出す
+                    if (readAloud.value case final controller?
+                        when controller.isActive)
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: 8,
+                        child: ReadAloudBar(controller: controller),
+                      ),
                   ],
                 ),
+              ),
+                  ),
+                  // 今の話の中のページ（位置）とシークバー
+                  SafeArea(
+                    top: false,
+                    child: ReaderPositionBar(
+                      key: ValueKey(currentEpisode.value),
+                      navigation: navigationFor(currentEpisode.value),
+                      isVertical: settings.isVertical,
+                      isPageFlip: settings.isPageFlip,
+                      textColor: settings.colorTheme.text,
+                    ),
+                  ),
+                ],
               ),
             );
           },

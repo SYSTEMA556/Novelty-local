@@ -100,6 +100,15 @@ class ReaderNavigation {
     return true;
   }
 
+  /// 今見ている位置を全体の割合（0.0〜1.0）で返す。
+  double currentFraction({required bool isVertical, required bool isPageFlip}) {
+    if (isVertical && isPageFlip) {
+      final count = pageCount.value;
+      return count > 1 ? currentPage.value / (count - 1) : 0;
+    }
+    return progress.value;
+  }
+
   /// ページ [page] へ移る。
   void jumpToPage(int page) {
     if (!pageController.hasClients) return;
