@@ -327,9 +327,11 @@ class VoicevoxEngine implements SpeechEngine {
         ok: last != null,
         message: [
           '準備できました（準備 ${(prepared / 1000).toStringAsFixed(1)} 秒）',
-          '声 ${audio.toStringAsFixed(1)} 秒を '
-              '${synth.toStringAsFixed(1)} 秒で作成'
-              '（${speed.toStringAsFixed(2)} 倍速）',
+          [
+            '声 ${audio.toStringAsFixed(1)} 秒を',
+            ' ${synth.toStringAsFixed(1)} 秒で作成',
+            '（${speed.toStringAsFixed(2)} 倍速）',
+          ].join(),
           if (speed >= 1) '1倍速より速いので、先読みが効けば途切れずに読めます',
           if (speed > 0 && speed < 1) '1倍速より遅いため、文と文の間に待ちが出ます',
         ].join('\n'),
