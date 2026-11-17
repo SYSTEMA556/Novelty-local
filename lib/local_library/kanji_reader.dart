@@ -8,7 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// 読み仮名の辞書（アプリに同梱）。
 ///
-/// 1行に「漢字を含む語<TAB>ひらがなの読み」。語の順に並べて gzip 圧縮する。
+/// 1行に「漢字を含む語・タブ・ひらがなの読み」。語の順に並べて gzip 圧縮する。
 /// 作り方は tool/build_reading_dictionary.py を参照。
 const readingDictionaryAsset = 'assets/dict/readings.tsv.gz';
 
