@@ -90,4 +90,21 @@ void main() {
       expect(doc(const []).segmentIndexAt(5), 0);
     });
   });
+
+  group('台詞と地の文を分ける', () {
+    test('台詞の後ろの地の文は別の文にする', () {
+      final d = doc([PlainText('「はい」と答えた。')]);
+      expect(d.segments.map((s) => s.text), ['「はい」', 'と答えた。']);
+    });
+
+    test('地の文の途中から始まる台詞は手前で区切る', () {
+      final d = doc([PlainText('彼は言った「待て」')]);
+      expect(d.segments.map((s) => s.text), ['彼は言った', '「待て」']);
+    });
+
+    test('地の文の中の（）や『』では区切らない', () {
+      final d = doc([PlainText('東京（とうきょう）で『坊っちゃん』を読んだ。')]);
+      expect(d.segments, hasLength(1));
+    });
+  });
 }

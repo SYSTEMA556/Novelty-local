@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
+import 'package:novelty/utils/settings_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 /// 画面を消さない設定を切り替える（失敗しても読書は続けられるため無視する）。
@@ -12,6 +14,22 @@ Future<void> setReaderWakelock({required bool enabled}) async {
   } on Object catch (e) {
     debugPrint('Failed to toggle wakelock: $e');
   }
+}
+
+/// 閲覧設定の読み上げの項目（速さ・高さ・演技・声）を [controller] に反映する。
+void applyReadAloudSettings(
+  ReadAloudController controller,
+  AppSettings? settings,
+) {
+  String? voice(String? name) =>
+      name == null || name.isEmpty ? null : name;
+  controller.setVoice(
+    rate: settings?.ttsRate ?? 0.5,
+    pitch: settings?.ttsPitch ?? 1,
+    acting: (settings?.ttsActing ?? 60) / 100,
+    narrationVoice: voice(settings?.ttsNarrationVoice),
+    dialogueVoice: voice(settings?.ttsDialogueVoice),
+  );
 }
 
 /// 読み上げ中に画面下に出す操作ボタン。
@@ -34,9 +52,25 @@ class ReadAloudBar extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 8),
-            Text(
-              '${controller.index + 1} / $total',
-              style: Theme.of(context).textTheme.labelMedium,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${controller.index + 1} / $total',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
+                // 今の文をどう演じているか（演技を切っているときは出さない）
+                if (controller.acting > 0)
+                  if (controller.currentDirection case final direction?)
+                    Text(
+                      direction.emotion == SpeechEmotion.neutral
+                          ? direction.role.label
+                          : '${direction.role.label}・'
+                                '${direction.emotion.label}',
+                      style: Theme.of(context).textTheme.labelSmall,
+                    ),
+              ],
             ),
             const Spacer(),
             IconButton(

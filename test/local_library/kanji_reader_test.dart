@@ -7,8 +7,9 @@ import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/screens/local_library_view.dart';
 
+// 本物の辞書と同じく、UTF-16 の順に並べてから渡す
 KanjiReader _reader() => KanjiReader.fromTsv(
-  [
+  ([
     '山\tやま',
     '山田\tやまだ',
     '山田風太郎\tやまだふうたろう',
@@ -18,7 +19,7 @@ KanjiReader _reader() => KanjiReader.fromTsv(
     '次郎\tじろう',
     '夏目\tなつめ',
     'Ｘ線\tえっくすせん',
-  ].join('\n'),
+  ]..sort()).join('\n'),
 );
 
 LocalWork _work(String id, String title, {String? author, String? reading}) =>
@@ -53,6 +54,11 @@ void main() {
       expect(reader.read('Ｘ線の山'), 'Ｘ線のやま');
       expect(KanaIndex.labelOf(reader.read('Ｘ線の山')), 'X');
       expect(reader.read('internet'), 'internet');
+    });
+
+    test('一致する語がない途中の文字でも次の語を探し直す', () {
+      expect(_reader().read('山川'), 'やま川');
+      expect(_reader().read('自業'), 'じ業');
     });
 
     test('辞書の語そのものを引ける', () {

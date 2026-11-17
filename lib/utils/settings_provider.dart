@@ -21,6 +21,9 @@ class AppSettings {
     this.maxLineChars = 0,
     this.ttsRate = 0.5,
     this.ttsPitch = 1.0,
+    this.ttsActing = 60,
+    this.ttsNarrationVoice = '',
+    this.ttsDialogueVoice = '',
     this.colorTheme = ReaderColorTheme.system,
     this.tapZoneEnabled = false,
     this.tapZoneLayout = TapZoneLayout.sides,
@@ -75,6 +78,15 @@ class AppSettings {
 
   /// 読み上げの声の高さ（0.5〜2.0。1.0 が標準）。
   final double ttsPitch;
+
+  /// 読み上げの演技の強さ（%。0 なら感情を付けず淡々と読む）。
+  final int ttsActing;
+
+  /// 地の文を読む声の名前（空なら端末の標準の声）。
+  final String ttsNarrationVoice;
+
+  /// 台詞・心の声を読む声の名前（空なら地の文と同じ声）。
+  final String ttsDialogueVoice;
 
   /// 本文の色調。
   final ReaderColorTheme colorTheme;
@@ -132,6 +144,9 @@ class AppSettings {
     int? maxLineChars,
     double? ttsRate,
     double? ttsPitch,
+    int? ttsActing,
+    String? ttsNarrationVoice,
+    String? ttsDialogueVoice,
     ReaderColorTheme? colorTheme,
     bool? tapZoneEnabled,
     TapZoneLayout? tapZoneLayout,
@@ -156,6 +171,9 @@ class AppSettings {
       maxLineChars: maxLineChars ?? this.maxLineChars,
       ttsRate: ttsRate ?? this.ttsRate,
       ttsPitch: ttsPitch ?? this.ttsPitch,
+      ttsActing: ttsActing ?? this.ttsActing,
+      ttsNarrationVoice: ttsNarrationVoice ?? this.ttsNarrationVoice,
+      ttsDialogueVoice: ttsDialogueVoice ?? this.ttsDialogueVoice,
       colorTheme: colorTheme ?? this.colorTheme,
       tapZoneEnabled: tapZoneEnabled ?? this.tapZoneEnabled,
       tapZoneLayout: tapZoneLayout ?? this.tapZoneLayout,
@@ -186,6 +204,9 @@ class Settings extends _$Settings {
   static const _maxLineCharsKey = 'max_line_chars';
   static const _ttsRateKey = 'tts_rate';
   static const _ttsPitchKey = 'tts_pitch';
+  static const _ttsActingKey = 'tts_acting';
+  static const _ttsNarrationVoiceKey = 'tts_narration_voice';
+  static const _ttsDialogueVoiceKey = 'tts_dialogue_voice';
   static const _colorThemeKey = 'reader_color_theme';
   static const _tapZoneEnabledKey = 'tap_zone_enabled';
   static const _tapZoneLayoutKey = 'tap_zone_layout';
@@ -237,6 +258,10 @@ class Settings extends _$Settings {
     final maxLineChars = await repo.getInt(_maxLineCharsKey) ?? 0;
     final ttsRate = await repo.getDouble(_ttsRateKey) ?? 0.5;
     final ttsPitch = await repo.getDouble(_ttsPitchKey) ?? 1.0;
+    final ttsActing = await repo.getInt(_ttsActingKey) ?? 60;
+    final ttsNarrationVoice =
+        await repo.getString(_ttsNarrationVoiceKey) ?? '';
+    final ttsDialogueVoice = await repo.getString(_ttsDialogueVoiceKey) ?? '';
     final colorTheme = ReaderColorTheme.fromName(
       await repo.getString(_colorThemeKey),
     );
@@ -268,6 +293,9 @@ class Settings extends _$Settings {
       maxLineChars: maxLineChars,
       ttsRate: ttsRate,
       ttsPitch: ttsPitch,
+      ttsActing: ttsActing,
+      ttsNarrationVoice: ttsNarrationVoice,
+      ttsDialogueVoice: ttsDialogueVoice,
       colorTheme: colorTheme,
       tapZoneEnabled: tapZoneEnabled,
       tapZoneLayout: tapZoneLayout,
@@ -303,6 +331,26 @@ class Settings extends _$Settings {
       rethrow;
     }
   }
+
+  /// 読み上げの演技の強さ・声を保存する（null の項目は変えない）。
+  Future<void> setTtsActing({
+    int? acting,
+    String? narrationVoice,
+    String? dialogueVoice,
+  }) => _save(
+    'tts acting',
+    (repo) async =>
+        (acting == null || await repo.setInt(_ttsActingKey, acting)) &&
+        (narrationVoice == null ||
+            await repo.setString(_ttsNarrationVoiceKey, narrationVoice)) &&
+        (dialogueVoice == null ||
+            await repo.setString(_ttsDialogueVoiceKey, dialogueVoice)),
+    (s) => s.copyWith(
+      ttsActing: acting,
+      ttsNarrationVoice: narrationVoice,
+      ttsDialogueVoice: dialogueVoice,
+    ),
+  );
 
   /// 本文の色調を設定する。
   Future<void> setColorTheme(ReaderColorTheme theme) => _save(

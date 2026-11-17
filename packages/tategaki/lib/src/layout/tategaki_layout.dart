@@ -97,4 +97,95 @@ class TategakiLayout {
 
     return pages;
   }
+
+  /// 列を1つずつ計算しながらページの区切りだけを求める
+  ///
+  /// [partition] と同じ規則で区切るが、列そのものは保持しない。
+  /// 長い本文でも、ページの数に比例する小さなメモリで済む
+  /// （ページの中身は表示するときに [TategakiPageBoundary.start] から作り直す）。
+  static List<TategakiPageBoundary> paginate({
+    required TategakiColumnEngine engine,
+    required double maxWidth,
+  }) {
+    final pages = <TategakiPageBoundary>[];
+    var start = engine.state;
+    var count = 0;
+    var width = 0.0;
+    int? first;
+    int? last;
+
+    void flushPage() {
+      if (count == 0) return;
+      pages.add(
+        TategakiPageBoundary(
+          start: start,
+          columnCount: count,
+          width: width,
+          firstElementIndex: first,
+          lastElementIndex: last,
+        ),
+      );
+    }
+
+    while (true) {
+      final before = engine.state;
+      final column = engine.computeNextColumn();
+      if (column == null) break;
+      // 区切りを求めるだけなので、計算した列はすぐ捨てる
+      engine.discardComputedColumns();
+
+      final spacing = count == 0 ? 0.0 : columnSpacing;
+      if (count == 0 || width + spacing + column.width <= maxWidth) {
+        if (count == 0) start = before;
+        count++;
+        width += spacing + column.width;
+      } else {
+        flushPage();
+        start = before;
+        count = 1;
+        width = column.width;
+        first = null;
+        last = null;
+      }
+      first ??= column.firstElementIndex;
+      last = column.lastElementIndex ?? last;
+    }
+    flushPage();
+    return pages;
+  }
+}
+
+/// ページの区切り（中身は持たず、作り直すための位置だけを持つ）
+class TategakiPageBoundary {
+  /// コンストラクタ
+  const TategakiPageBoundary({
+    required this.start,
+    required this.columnCount,
+    required this.width,
+    this.firstElementIndex,
+    this.lastElementIndex,
+  });
+
+  /// ページ先頭の列を計算し始める位置
+  final TategakiEngineState start;
+
+  /// ページの列数
+  final int columnCount;
+
+  /// ページの幅
+  final double width;
+
+  /// ページに含まれる最初の要素の位置（空のページは null）
+  final int? firstElementIndex;
+
+  /// ページに含まれる最後の要素の位置（空のページは null）
+  final int? lastElementIndex;
+
+  /// 要素の範囲 [start]〜[end]（end は含まない）と重なるか
+  bool overlaps(int start, int end) {
+    final f = firstElementIndex;
+    final l = lastElementIndex;
+    if (f == null || l == null) return false;
+    return f < end && l >= start;
+  }
 }

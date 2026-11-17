@@ -2,14 +2,17 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 
 /// 読み上げエンジン（端末の音声合成）の抽象。
 ///
 /// テストで差し替えられるよう、使う機能だけを切り出している。
 abstract class SpeechEngine {
-  /// 言語・速さ・高さを設定する。
-  Future<void> configure({required double rate, required double pitch});
+  /// 次に読む文の速さ・高さ・音量・声を設定する。
+  ///
+  /// [voice] は声の名前（null なら端末の標準の声）。
+  Future<void> apply(SpeechProsody prosody, {String? voice});
 
   /// [text] を読み上げ、読み終わる（または止められる）まで待つ。
   Future<void> speak(String text);
@@ -21,21 +24,108 @@ abstract class SpeechEngine {
   Future<void> dispose();
 }
 
-/// 端末の音声合成（flutter_tts）を使うエンジン。
-class FlutterTtsEngine implements SpeechEngine {
-  final FlutterTts _tts = FlutterTts();
-  bool _initialized = false;
+/// 端末の音声合成の声。
+@immutable
+class TtsVoice {
+  /// コンストラクタ。
+  const TtsVoice({required this.name, required this.locale});
+
+  /// 声の名前（エンジンごとの識別子）。
+  final String name;
+
+  /// 言語（ja-JP など）。
+  final String locale;
+
+  /// ネットにつないで作る声か（Google の音声エンジンでは名前に network が付く）。
+  bool get needsNetwork => name.contains('network');
 
   @override
-  Future<void> configure({required double rate, required double pitch}) async {
-    if (!_initialized) {
-      // speak() が読み終わりまで待つようにする（文ごとに順番に読むため）
-      await _tts.awaitSpeakCompletion(true);
-      await _tts.setLanguage('ja-JP');
-      _initialized = true;
+  bool operator ==(Object other) =>
+      other is TtsVoice && other.name == name && other.locale == locale;
+
+  @override
+  int get hashCode => Object.hash(name, locale);
+}
+
+// 端末の音声合成はアプリで1つを使い回す。
+// FlutterTts を複数作ると、読み終わりの知らせを受け取る先が後から作ったものに
+// 置き換わり、読み上げが止まらなくなる・進まなくなることがあるため。
+final FlutterTts _sharedTts = FlutterTts();
+
+/// 端末にある日本語の声の一覧（端末の中だけで作る声を先に並べる）。
+Future<List<TtsVoice>> availableJapaneseVoices() async {
+  try {
+    final raw = await _sharedTts.getVoices;
+    final voices = <TtsVoice>[
+      if (raw is List)
+        for (final v in raw)
+          if (v is Map &&
+              v['name'] is String &&
+              '${v['locale']}'.toLowerCase().startsWith('ja'))
+            TtsVoice(name: v['name'] as String, locale: '${v['locale']}'),
+    ]..sort((a, b) {
+        if (a.needsNetwork != b.needsNetwork) return a.needsNetwork ? 1 : -1;
+        return a.name.compareTo(b.name);
+      });
+    return voices;
+  } on Object catch (e) {
+    debugPrint('声の一覧を取得できませんでした: $e');
+    return const [];
+  }
+}
+
+/// 端末の音声合成（flutter_tts）を使うエンジン。
+///
+/// 同じ値を何度も送らないよう、最後に設定した値を覚えておく。
+class FlutterTtsEngine implements SpeechEngine {
+  final FlutterTts _tts = _sharedTts;
+  bool _initialized = false;
+  SpeechProsody? _lastProsody;
+  // 前の読み上げが別の声を残していることがあるため、最初の1回は必ず設定する
+  bool _voiceApplied = false;
+  String? _lastVoice;
+  Map<String, String>? _defaultVoice;
+  Map<String, String> _voiceLocales = const {};
+
+  Future<void> _init() async {
+    if (_initialized) return;
+    _initialized = true;
+    // speak() が読み終わりまで待つようにする（文ごとに順番に読むため）
+    await _tts.awaitSpeakCompletion(true);
+    await _tts.setLanguage('ja-JP');
+    try {
+      final def = await _tts.getDefaultVoice;
+      if (def is Map && def['name'] != null) {
+        _defaultVoice = {
+          'name': '${def['name']}',
+          'locale': '${def['locale']}',
+        };
+      }
+      _voiceLocales = {
+        for (final v in await availableJapaneseVoices()) v.name: v.locale,
+      };
+    } on Object catch (e) {
+      debugPrint('標準の声を取得できませんでした: $e');
     }
-    await _tts.setSpeechRate(rate);
-    await _tts.setPitch(pitch);
+  }
+
+  @override
+  Future<void> apply(SpeechProsody prosody, {String? voice}) async {
+    await _init();
+    if (!_voiceApplied || voice != _lastVoice) {
+      _voiceApplied = true;
+      _lastVoice = voice;
+      final locale = voice == null ? null : _voiceLocales[voice];
+      final target = voice != null && locale != null
+          ? {'name': voice, 'locale': locale}
+          : _defaultVoice;
+      if (target != null) await _tts.setVoice(target);
+    }
+    final last = _lastProsody;
+    if (last?.rate != prosody.rate) await _tts.setSpeechRate(prosody.rate);
+    if (last?.pitch != prosody.pitch) await _tts.setPitch(prosody.pitch);
+    if (last?.volume != prosody.volume) await _tts.setVolume(prosody.volume);
+    _lastProsody = prosody;
   }
 
   @override
@@ -93,6 +183,21 @@ class ReadAloudController extends ChangeNotifier {
 
   double _rate = 0.5;
   double _pitch = 1;
+  double _acting = 0;
+  String? _narrationVoice;
+  String? _dialogueVoice;
+
+  /// 文ごとの演出（役割・感情・間）。初めて使うときに読み取る。
+  late final List<SpeechDirection> directions = SpeechDirector.direct(
+    document,
+  );
+
+  /// 今の文の演出（文が無ければ null）。
+  SpeechDirection? get currentDirection =>
+      document.segments.isEmpty ? null : directions[_index];
+
+  /// 演技の強さ（0.0〜1.0）。
+  double get acting => _acting;
 
   /// 現在の状態。
   ReadAloudStatus get status => _status;
@@ -110,10 +215,22 @@ class ReadAloudController extends ChangeNotifier {
   SpeechSegment? get currentSegment =>
       document.segments.isEmpty ? null : document.segments[_index];
 
-  /// 速さ・高さを変える（次の文から反映）。
-  void setVoice({required double rate, required double pitch}) {
+  /// 速さ・高さ・演技の強さ・声を変える（次の文から反映）。
+  ///
+  /// [acting] は 0.0〜1.0（0 なら感情を付けず、間も置かない）。
+  /// [narrationVoice]・[dialogueVoice] は声の名前（null なら端末の標準の声）。
+  void setVoice({
+    required double rate,
+    required double pitch,
+    double acting = 0,
+    String? narrationVoice,
+    String? dialogueVoice,
+  }) {
     _rate = rate;
     _pitch = pitch;
+    _acting = acting.clamp(0.0, 1.0);
+    _narrationVoice = narrationVoice;
+    _dialogueVoice = dialogueVoice;
   }
 
   /// [segmentIndex] 番目の文から読み始める。
@@ -172,7 +289,6 @@ class ReadAloudController extends ChangeNotifier {
     notifyListeners();
     await _engine.stop();
     if (generation != _generation) return;
-    await _engine.configure(rate: _rate, pitch: _pitch);
     await _loop(generation);
   }
 
@@ -180,7 +296,19 @@ class ReadAloudController extends ChangeNotifier {
     while (generation == _generation && _index < document.segments.length) {
       _reportPosition();
       notifyListeners();
+      final direction = directions[_index];
       try {
+        await _engine.apply(
+          direction.prosody(
+            baseRate: _rate,
+            basePitch: _pitch,
+            acting: _acting,
+          ),
+          voice: direction.role == SpeechRole.narration
+              ? _narrationVoice
+              : _dialogueVoice ?? _narrationVoice,
+        );
+        if (generation != _generation) return;
         await _engine.speak(document.segments[_index].text);
       } on Object catch (e) {
         debugPrint('Read aloud failed: $e');
@@ -198,6 +326,12 @@ class ReadAloudController extends ChangeNotifier {
         notifyListeners();
         onCompleted?.call();
         return;
+      }
+      // 場面の切り替わりや「……」のあとに間を置く
+      final pause = direction.pause(acting: _acting);
+      if (pause > Duration.zero) {
+        await Future<void>.delayed(pause);
+        if (generation != _generation) return;
       }
       _index++;
     }

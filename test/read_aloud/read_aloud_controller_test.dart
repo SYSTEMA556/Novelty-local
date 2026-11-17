@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 
 /// 読み上げを手動で進めるテスト用エンジン。
@@ -18,8 +19,12 @@ class FakeEngine implements SpeechEngine {
     await pumpEventQueue();
   }
 
+  final applied = <(SpeechProsody, String?)>[];
+
   @override
-  Future<void> configure({required double rate, required double pitch}) async {}
+  Future<void> apply(SpeechProsody prosody, {String? voice}) async {
+    applied.add((prosody, voice));
+  }
 
   @override
   Future<void> speak(String text) {
@@ -139,5 +144,67 @@ void main() {
     await pumpEventQueue();
     await engine.finish();
     expect(completed, 1);
+  });
+
+  group('演技', () {
+    test('演技 0% なら基準の速さ・高さのまま読む', () async {
+      final e = FakeEngine();
+      final c = ReadAloudController(
+        document: SpeechDocument.fromElements([
+          PlainText('「ふざけるな！」と怒鳴った。'),
+        ]),
+        engine: e,
+      )..setVoice(rate: 0.5, pitch: 1);
+      unawaited(c.playFrom(0));
+      await pumpEventQueue();
+      expect(e.applied.first.$1, const SpeechProsody(
+        rate: 0.5,
+        pitch: 1,
+        volume: 1,
+      ));
+      c.dispose();
+    });
+
+    test('台詞は台詞の声、地の文は地の文の声で読む', () async {
+      final e = FakeEngine();
+      final c = ReadAloudController(
+        document: SpeechDocument.fromElements([
+          PlainText('「行こう」と言った。'),
+        ]),
+        engine: e,
+      )..setVoice(
+          rate: 0.5,
+          pitch: 1,
+          acting: 1,
+          narrationVoice: 'n',
+          dialogueVoice: 'd',
+        );
+      unawaited(c.playFrom(0));
+      await pumpEventQueue();
+      expect(e.spoken, ['「行こう」']);
+      expect(e.applied.last.$2, 'd');
+      await e.finish();
+      // 話し手が変わるところには短い間を置く
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      await pumpEventQueue();
+      expect(e.spoken.last, 'と言った。');
+      expect(e.applied.last.$2, 'n');
+      c.dispose();
+    });
+
+    test('怒鳴った台詞は、演技を付けると速く読む', () async {
+      final e = FakeEngine();
+      final c = ReadAloudController(
+        document: SpeechDocument.fromElements([
+          PlainText('「ふざけるな！」と男が怒鳴った。'),
+        ]),
+        engine: e,
+      )..setVoice(rate: 0.5, pitch: 1, acting: 1);
+      unawaited(c.playFrom(0));
+      await pumpEventQueue();
+      expect(c.currentDirection?.role, SpeechRole.dialogue);
+      expect(e.applied.first.$1.rate, greaterThan(0.5));
+      c.dispose();
+    });
   });
 }

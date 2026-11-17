@@ -8,11 +8,15 @@ import 'package:tategaki/src/highlight.dart';
 import 'package:tategaki/src/layout/column.dart';
 import 'package:tategaki/src/layout/tategaki_column_engine.dart';
 import 'package:tategaki/src/layout/tategaki_layout.dart';
+import 'package:tategaki/src/layout/tategaki_measurer.dart';
 import 'package:tategaki/src/painting/tategaki_painter.dart';
 
 /// 縦書きテキストをページ送りで表示するウィジェット
 ///
-/// 列エンジンで全列を計算し、列を幅でページ分割する。各ページは
+/// 列エンジンで全列を1度計算してページの区切りだけを覚え、列そのものは捨てる。
+/// ページの中身は表示するときに区切りの位置から計算し直し、直近の数ページ分
+/// だけを残す（長い本文でもメモリを食わないよう、計算量と引き換えにする）。
+/// 各ページは
 /// `ui.Picture` に**プリレンダ**して保持し、ページ遷移中は
 /// `canvas.drawPicture` で描画するため、遷移アニメーションが
 /// 重いレイアウト・ペイントでフレーム落ちしない。
@@ -67,8 +71,18 @@ class TategakiTextPaged extends StatefulWidget {
 }
 
 class _TategakiTextPagedState extends State<TategakiTextPaged> {
-  /// ページ分割結果（入力が変わらない限り再利用）
-  List<TategakiMetrics>? _pages;
+  /// ページの区切り（入力が変わらない限り再利用）
+  List<TategakiPageBoundary>? _pages;
+
+  /// 計測結果のキャッシュ（ページを作り直すときに共有する）
+  TategakiMeasurer? _measurer;
+
+  /// 作ったページの中身（直近の数ページだけ残す）
+  // 挿入順を保つ Map を使い、使ったページを末尾へ移して古い順に捨てる
+  final Map<int, TategakiMetrics> _pageCache = {};
+
+  /// 中身を残しておくページ数
+  static const int _pageCacheSize = 6;
 
   /// 最後にレイアウト計算した入力値（再計算が必要かの判定用）
   List<TategakiElement>? _cachedElements;
@@ -107,15 +121,61 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
   int? _pageOfElement(int elementIndex) {
     final pages = _pages;
     if (pages == null) return null;
-    for (var i = 0; i < pages.length; i++) {
-      for (final column in pages[i].columns) {
-        final last = column.lastElementIndex;
-        if (last != null && last >= elementIndex) {
-          return i;
-        }
+    // 最後の要素の位置はページの順に増えるので二分探索できる
+    int? found;
+    var low = 0;
+    var high = pages.length - 1;
+    while (low <= high) {
+      final mid = (low + high) ~/ 2;
+      final last = _lastElementUpTo(pages, mid);
+      if (last != null && last >= elementIndex) {
+        found = mid;
+        high = mid - 1;
+      } else {
+        low = mid + 1;
       }
     }
+    return found;
+  }
+
+  // 空のページは最後の要素を持たないため、手前のページの値を使う
+  static int? _lastElementUpTo(List<TategakiPageBoundary> pages, int index) {
+    for (var i = index; i >= 0; i--) {
+      final last = pages[i].lastElementIndex;
+      if (last != null) return last;
+    }
     return null;
+  }
+
+  /// [index] 番目のページの中身（キャッシュになければ区切りから作り直す）
+  TategakiMetrics _metricsFor(int index, double availableHeight) {
+    final cached = _pageCache.remove(index);
+    if (cached != null) {
+      _pageCache[index] = cached;
+      return cached;
+    }
+    final boundary = _pages![index];
+    final engine = TategakiColumnEngine(
+      elements: widget.elements,
+      maxHeight: availableHeight,
+      textStyle: _cachedStyle!,
+      measurer: _measurer,
+    )..restartFrom(boundary.start);
+    final columns = <TategakiColumn>[];
+    for (var i = 0; i < boundary.columnCount; i++) {
+      final column = engine.computeNextColumn();
+      if (column == null) break;
+      columns.add(column);
+    }
+    final metrics = TategakiMetrics(
+      columns: List.unmodifiable(columns),
+      size: Size(boundary.width, availableHeight),
+    );
+    _pageCache[index] = metrics;
+    while (_pageCache.length > _pageCacheSize) {
+      _pageCache.remove(_pageCache.keys.first);
+    }
+    return metrics;
   }
 
   /// 要素 [elementIndex] を含むページが表示されていなければ、めくる
@@ -160,24 +220,21 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
       _cachedPadding = widget.padding;
       _cachedStyle = textStyle;
 
-      // 1. 列エンジンで全列を計算
-      // 上下パディングを引いた高さで計算
+      // 列を1つずつ計算しながら、ページの区切りだけを求める
+      // （上下パディングを引いた高さ・左右パディングを引いた幅で計算）
       final availableHeight = widget.height - widget.padding.vertical;
       final engine = TategakiColumnEngine(
         elements: widget.elements,
         maxHeight: availableHeight,
         textStyle: textStyle,
       );
-      final columns = engine.computeAll();
-
-      // 2. ページ分割
-      // 左右パディングを引いた幅で分割
       final availableWidth = widget.width - widget.padding.horizontal;
-      _pages = TategakiLayout.partition(
-        columns: columns,
+      _pages = TategakiLayout.paginate(
+        engine: engine,
         maxWidth: availableWidth,
-        height: availableHeight,
       );
+      _measurer = engine.measurer;
+      _pageCache.clear();
 
       // ビルド中に親の状態を変えないよう、描画後に知らせる
       final count = _pages!.length;
@@ -203,13 +260,13 @@ class _TategakiTextPagedState extends State<TategakiTextPaged> {
         onPageChanged: widget.onPageChanged,
         itemCount: pages.length,
         itemBuilder: (context, index) {
-          final pageMetrics = pages[index];
+          final pageMetrics = _metricsFor(index, availableHeight);
           // ハイライトはそのページに含まれる場合だけ渡す
           // （他のページのプリレンダ済み画像を作り直さないため）
           final highlight = widget.highlight;
           final pageHighlight =
               highlight != null &&
-                  pageMetrics.columns.any(highlight.overlapsColumn)
+                  pages[index].overlaps(highlight.start, highlight.end)
               ? highlight
               : null;
 

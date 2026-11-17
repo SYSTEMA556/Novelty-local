@@ -1,7 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:narou_parser/narou_parser.dart';
+import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/utils/reader_appearance.dart';
 import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/tap_zone_guide.dart';
 
 /// 閲覧設定ページ
@@ -298,6 +304,32 @@ class ReaderSettingsPage extends ConsumerWidget {
       }
     }
 
+    Future<void> saveActing({
+      int? acting,
+      String? narrationVoice,
+      String? dialogueVoice,
+    }) async {
+      try {
+        await ref
+            .read(settingsProvider.notifier)
+            .setTtsActing(
+              acting: acting,
+              narrationVoice: narrationVoice,
+              dialogueVoice: dialogueVoice,
+            );
+      } on Exception catch (e, stackTrace) {
+        debugPrint('Failed to save tts acting: $e\n$stackTrace');
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('読み上げ設定の保存に失敗しました'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -332,11 +364,38 @@ class ReaderSettingsPage extends ConsumerWidget {
             onChanged: (value) => save(pitch: value),
           ),
         ),
+        ListTile(
+          title: Text('演技の強さ: ${settings.ttsActing}%'),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Slider(
+                value: settings.ttsActing.clamp(0, 100).toDouble(),
+                max: 100,
+                divisions: 10,
+                label: '${settings.ttsActing}%',
+                onChanged: (value) => saveActing(acting: value.round()),
+              ),
+              const Text(
+                '台詞と地の文、「〜と叫んだ」「〜と囁いた」などの言葉、'
+                '！や…から場面の感情を読み取り、文ごとに声の高さ・速さ・'
+                '音量・間を変えます。0% にすると淡々と読みます。',
+              ),
+            ],
+          ),
+        ),
+        _VoicePicker(
+          narrationVoice: settings.ttsNarrationVoice,
+          dialogueVoice: settings.ttsDialogueVoice,
+          onNarrationChanged: (name) => saveActing(narrationVoice: name),
+          onDialogueChanged: (name) => saveActing(dialogueVoice: name),
+        ),
+        _ActingPreview(settings: settings),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Text(
-            '声の種類や読み方は、端末の「テキスト読み上げ」設定'
-            '（音声エンジン）に従います。',
+            '声は端末の「テキスト読み上げ」の音声エンジンのものを使います。'
+            '「ネット」と付いた声は通信が必要です。',
           ),
         ),
       ],
@@ -576,6 +635,156 @@ class ReaderSettingsPage extends ConsumerWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// 地の文・台詞の声を選ぶ欄（端末にある日本語の声から選ぶ）。
+class _VoicePicker extends StatefulWidget {
+  const _VoicePicker({
+    required this.narrationVoice,
+    required this.dialogueVoice,
+    required this.onNarrationChanged,
+    required this.onDialogueChanged,
+  });
+
+  final String narrationVoice;
+  final String dialogueVoice;
+  final ValueChanged<String> onNarrationChanged;
+  final ValueChanged<String> onDialogueChanged;
+
+  @override
+  State<_VoicePicker> createState() => _VoicePickerState();
+}
+
+class _VoicePickerState extends State<_VoicePicker> {
+  late final Future<List<TtsVoice>> _voices = availableJapaneseVoices();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<TtsVoice>>(
+      future: _voices,
+      builder: (context, snapshot) {
+        final voices = snapshot.data ?? const <TtsVoice>[];
+        if (voices.length < 2) return const SizedBox.shrink();
+        return Column(
+          children: [
+            _dropdown(
+              title: '地の文の声',
+              value: widget.narrationVoice,
+              defaultLabel: '端末の標準',
+              voices: voices,
+              onChanged: widget.onNarrationChanged,
+            ),
+            _dropdown(
+              title: '台詞の声',
+              value: widget.dialogueVoice,
+              defaultLabel: '地の文と同じ',
+              voices: voices,
+              onChanged: widget.onDialogueChanged,
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _dropdown({
+    required String title,
+    required String value,
+    required String defaultLabel,
+    required List<TtsVoice> voices,
+    required ValueChanged<String> onChanged,
+  }) {
+    final known = value.isEmpty || voices.any((v) => v.name == value);
+    return ListTile(
+      title: Text(title),
+      trailing: DropdownButton<String>(
+        value: known ? value : '',
+        onChanged: (name) {
+          if (name != null) onChanged(name);
+        },
+        items: [
+          DropdownMenuItem(value: '', child: Text(defaultLabel)),
+          for (var i = 0; i < voices.length; i++)
+            DropdownMenuItem(
+              value: voices[i].name,
+              child: Text(
+                '声${i + 1}${voices[i].needsNetwork ? '（ネット）' : ''}',
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 演技の試し聞き。
+class _ActingPreview extends StatefulWidget {
+  const _ActingPreview({required this.settings});
+
+  final AppSettings settings;
+
+  @override
+  State<_ActingPreview> createState() => _ActingPreviewState();
+}
+
+class _ActingPreviewState extends State<_ActingPreview> {
+  ReadAloudController? _controller;
+
+  static final _sample = SpeechDocument.fromElements([
+    PlainText('彼女は窓の外を見た。'),
+    NewLine(),
+    PlainText('「やった！　ついに完成したのね！」'),
+    PlainText('と、彼女は声を弾ませた。'),
+    NewLine(),
+    NewLine(),
+    PlainText('「……でも、もう誰もいないの」'),
+    NewLine(),
+    PlainText('彼女は小さく呟いた。'),
+    NewLine(),
+    PlainText('「ふざけるな！　ここから出せ！」'),
+    PlainText('と男が怒鳴った。'),
+  ]);
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _play() async {
+    final playing = _controller?.isActive ?? false;
+    _controller?.dispose();
+    _controller = null;
+    if (playing) {
+      setState(() {});
+      return;
+    }
+    final controller = ReadAloudController(document: _sample)
+      ..addListener(() {
+        if (mounted) setState(() {});
+      });
+    applyReadAloudSettings(controller, widget.settings);
+    setState(() => _controller = controller);
+    await controller.playFrom(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final active = controller?.isActive ?? false;
+    final direction = active ? controller?.currentDirection : null;
+    return ListTile(
+      leading: Icon(active ? Icons.stop : Icons.play_arrow),
+      title: Text(active ? '試し聞きを止める' : '演技を試し聞きする'),
+      subtitle: direction == null
+          ? const Text('いまの設定で、短い場面を読み上げます')
+          : Text(
+              '${direction.role.label}・${direction.emotion.label}'
+              '（強さ ${(direction.intensity * 100).round()}%）',
+            ),
+      onTap: () => unawaited(_play()),
     );
   }
 }

@@ -49,6 +49,8 @@ class SpeechDocument {
   /// 本文要素から作る。
   ///
   /// - 句点・感嘆符・疑問符（直後の閉じ括弧も含む）と改行で文を区切る
+  /// - 台詞（「」『』）と心の声（（））は、地の文と別の文にする
+  ///   （声色を変えて演じ分けるため）
   /// - ルビは読み仮名で読む（「漢字《かんじ》」は「かんじ」）
   /// - 長すぎる文は読点で区切る（読み上げエンジンの上限対策）
   /// - 読む文字が無い文（空行・記号だけ・HTMLタグだけの行）は飛ばす
@@ -113,7 +115,8 @@ class SpeechDocument {
     return segmentIndexAt((length * clamped).floor());
   }
 
-  static const _sentenceEnds = {'。', '！', '？', '!', '?', '…', '‥'};
+  // 「…」「‥」は文の途中（「彼は……黙った」）にもよく出るため、文末にしない
+  static const _sentenceEnds = {'。', '！', '？', '!', '?'};
 }
 
 class _SegmentBuilder {
@@ -127,17 +130,49 @@ class _SegmentBuilder {
   static const _maxLength = 200;
 
   static const _closings = {'」', '』', '）', ')', '】', '〉', '》', '”', '’'};
+  static const _endMarks = {'。', '！', '？', '!', '?'};
+  static const _quoteOpenings = {'「', '『', '（', '('};
+  static const _quoteClosings = {'」', '』', '）', ')'};
+
+  // 地の文の途中でも区切る開き括弧（『』は書名、（）は読み仮名や注釈にも
+  // 使われるため、文の頭にあるときだけ台詞・心の声として扱う）
+  static const _splitOpenings = {'「'};
+
+  // 文の頭が開き括弧だったときの括弧の深さ（頭が括弧でなければ null）
+  int? _quoteDepth;
   static final _speakable = RegExp(r'[\p{L}\p{N}]', unicode: true);
   static final _tagOnly = RegExp(r'^\s*</?[a-zA-Z][^>]*>\s*$');
 
   void add(String text, int start, int end) {
-    // 文末の後に閉じ括弧が続く場合は同じ文に含める
-    if (_ended && !(text.length == 1 && _closings.contains(text))) {
+    // 文末の後に閉じ括弧や文末の記号（！！・！？）が続く場合は同じ文に含める
+    if (_ended &&
+        !(text.length == 1 &&
+            (_closings.contains(text) || _endMarks.contains(text)))) {
       _flush();
     }
-    _start ??= start;
+    final isOpening = text.length == 1 && _quoteOpenings.contains(text);
+    // 地の文の途中から台詞が始まるときは、その手前で区切る
+    if (_splitOpenings.contains(text) &&
+        _quoteDepth == null &&
+        _speakable.hasMatch(_text.toString())) {
+      _flush();
+    }
+    if (_start == null) {
+      _start = start;
+      _quoteDepth = isOpening ? 0 : null;
+    }
     _text.write(text);
     _end = end;
+    final depth = _quoteDepth;
+    if (depth != null && text.length == 1) {
+      if (_quoteOpenings.contains(text)) {
+        _quoteDepth = depth + 1;
+      } else if (_quoteClosings.contains(text)) {
+        _quoteDepth = depth - 1;
+        // 台詞が閉じたら、続く地の文（「〜と言った」）は別の文にする
+        if (depth - 1 <= 0) _ended = true;
+      }
+    }
     if (_text.length >= _maxLength && (text == '、' || text == '，')) {
       _flush();
     }
@@ -149,6 +184,7 @@ class _SegmentBuilder {
 
   void _flush() {
     _ended = false;
+    _quoteDepth = null;
     final start = _start;
     final text = _text.toString();
     _text.clear();

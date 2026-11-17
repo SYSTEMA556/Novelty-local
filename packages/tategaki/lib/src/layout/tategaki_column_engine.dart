@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 
 import 'package:tategaki/src/element/tategaki_element.dart';
@@ -15,11 +16,16 @@ import 'package:tategaki/src/layout/tategaki_measurer.dart';
 /// されるため、列を追加計算しても同じ要素の再計測は発生しない。
 class TategakiColumnEngine {
   /// コンストラクタ
+  ///
+  /// [measurer] を渡すと計測結果のキャッシュを共有できる
+  /// （同じ要素・高さ・スタイルでページを作り直すときに使う）。
   TategakiColumnEngine({
     required this.elements,
     required this.maxHeight,
     required this.textStyle,
-  }) : _measurer = TategakiMeasurer(textStyle, maxAdvance: maxHeight);
+    TategakiMeasurer? measurer,
+  }) : _measurer =
+           measurer ?? TategakiMeasurer(textStyle, maxAdvance: maxHeight);
 
   /// 表示する要素のリスト
   final List<TategakiElement> elements;
@@ -46,6 +52,29 @@ class TategakiColumnEngine {
 
   /// 計算済みの列数
   int get computedColumnCount => _columns.length;
+
+  /// 計測器（キャッシュを共有するために使う）
+  TategakiMeasurer get measurer => _measurer;
+
+  /// 次の列を計算し始める位置
+  ///
+  /// [restartFrom] に渡すと、そこから同じ列を計算し直せる。
+  TategakiEngineState get state => TategakiEngineState(
+    _elementIndex,
+    pendingEmptyColumn: _pendingEmptyColumn,
+  );
+
+  /// [state] の位置から計算をやり直す（計算済みの列は捨てる）
+  void restartFrom(TategakiEngineState state) {
+    _columns.clear();
+    _elementIndex = state.elementIndex;
+    _pendingEmptyColumn = state.pendingEmptyColumn;
+  }
+
+  /// 計算済みの列を捨ててメモリを空ける（計算位置はそのまま）
+  ///
+  /// 以後 [columnAt] などの列番号は捨てた後からの数え方になる。
+  void discardComputedColumns() => _columns.clear();
 
   /// 指定インデックスの列を返す（未計算なら計算する）
   TategakiColumn columnAt(int index) {
@@ -285,4 +314,29 @@ class TategakiColumnEngine {
     );
   }
 
+}
+
+/// 列エンジンの計算位置（ページの先頭から列を計算し直すために使う）
+@immutable
+class TategakiEngineState {
+  /// コンストラクタ
+  const TategakiEngineState(
+    this.elementIndex, {
+    this.pendingEmptyColumn = false,
+  });
+
+  /// 次に読む要素の位置
+  final int elementIndex;
+
+  /// 改行による空の列を次に返すか
+  final bool pendingEmptyColumn;
+
+  @override
+  bool operator ==(Object other) =>
+      other is TategakiEngineState &&
+      other.elementIndex == elementIndex &&
+      other.pendingEmptyColumn == pendingEmptyColumn;
+
+  @override
+  int get hashCode => Object.hash(elementIndex, pendingEmptyColumn);
 }

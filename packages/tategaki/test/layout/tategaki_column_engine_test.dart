@@ -255,4 +255,76 @@ void main() {
       expect(metrics.size.width, greaterThan(0));
     });
   });
+
+  group('ページの区切りだけを求めて作り直す', () {
+    List<TategakiElement> sample() => [
+      for (var i = 0; i < 400; i++) ...[
+        TategakiChar(i.isEven ? 'あ' : '漢'),
+        if (i % 37 == 0) const TategakiChar('。'),
+        if (i % 53 == 0) const TategakiNewLine(),
+        if (i % 97 == 0) const TategakiNewLine(),
+      ],
+    ];
+
+    testWidgets('paginate は partition と同じページ数・列数になる', (tester) async {
+      final elements = sample();
+      final full = TategakiColumnEngine(
+        elements: elements,
+        maxHeight: 200,
+        textStyle: style,
+      ).computeAll();
+      final expected = TategakiLayout.partition(
+        columns: full,
+        maxWidth: 150,
+        height: 200,
+      );
+      final pages = TategakiLayout.paginate(
+        engine: TategakiColumnEngine(
+          elements: elements,
+          maxHeight: 200,
+          textStyle: style,
+        ),
+        maxWidth: 150,
+      );
+      expect(pages.length, expected.length);
+      for (var i = 0; i < pages.length; i++) {
+        expect(pages[i].columnCount, expected[i].columns.length);
+        expect(pages[i].width, closeTo(expected[i].size.width, 0.001));
+      }
+    });
+
+    testWidgets('区切りの位置から作り直した列は、通しで作った列と同じ', (tester) async {
+      final elements = sample();
+      final full = TategakiColumnEngine(
+        elements: elements,
+        maxHeight: 200,
+        textStyle: style,
+      ).computeAll();
+      final expected = TategakiLayout.partition(
+        columns: full,
+        maxWidth: 150,
+        height: 200,
+      );
+      final engine = TategakiColumnEngine(
+        elements: elements,
+        maxHeight: 200,
+        textStyle: style,
+      );
+      final pages = TategakiLayout.paginate(engine: engine, maxWidth: 150);
+      for (final index in [0, pages.length ~/ 2, pages.length - 1]) {
+        final rebuilt = TategakiColumnEngine(
+          elements: elements,
+          maxHeight: 200,
+          textStyle: style,
+          measurer: engine.measurer,
+        )..restartFrom(pages[index].start);
+        for (final column in expected[index].columns) {
+          final again = rebuilt.computeNextColumn()!;
+          expect(again.firstElementIndex, column.firstElementIndex);
+          expect(again.lastElementIndex, column.lastElementIndex);
+          expect(again.width, closeTo(column.width, 0.001));
+        }
+      }
+    });
+  });
 }

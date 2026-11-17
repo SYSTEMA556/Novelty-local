@@ -90,12 +90,10 @@ class NovelPage extends HookConsumerWidget {
     );
     final settingsValue = ref.watch(settingsProvider).value;
     useEffect(() {
-      readAloud.value?.setVoice(
-        rate: settingsValue?.ttsRate ?? 0.5,
-        pitch: settingsValue?.ttsPitch ?? 1,
-      );
+      final controller = readAloud.value;
+      if (controller != null) applyReadAloudSettings(controller, settingsValue);
       return null;
-    }, [readAloud.value, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
+    }, [readAloud.value, settingsValue]);
     // 読み終えたときの処理（毎回最新の状態を見るよう ref で持つ）
     final advanceRef = useRef<VoidCallback?>(null);
 
@@ -209,10 +207,8 @@ class NovelPage extends HookConsumerWidget {
           final controller = ReadAloudController(
             document: document,
             onCompleted: () => advanceRef.value?.call(),
-          )..setVoice(
-              rate: settingsValue?.ttsRate ?? 0.5,
-              pitch: settingsValue?.ttsPitch ?? 1,
-            );
+          );
+          applyReadAloudSettings(controller, settingsValue);
           readAloud.value = controller;
           readingEpisode.value = ep;
           if (document.segments.isEmpty) {

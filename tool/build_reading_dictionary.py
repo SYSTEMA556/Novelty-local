@@ -121,7 +121,9 @@ for lit, cid in c.execute("select literal, ID from character"):
     pick = (on or kun)
     if pick and KANA.match(pick[0]):
         best[lit] = (3, hira(pick[0]))
-lines = sorted(f"{k}\t{v[1]}" for k, v in best.items())
+# アプリ側は UTF-16 の並びで二分探索するため、UTF-16 の順に並べる
+lines = sorted((f"{k}\t{v[1]}" for k, v in best.items()),
+               key=lambda line: line.encode('utf-16-be'))
 data = ('\n'.join(lines) + '\n').encode()
 with gzip.open(out, 'wb', compresslevel=9) as f: f.write(data)
 print(len(lines), len(data), file=sys.stderr)

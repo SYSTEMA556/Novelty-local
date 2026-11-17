@@ -138,12 +138,9 @@ class LocalTextReaderPage extends HookConsumerWidget {
     useEffect(() => readAloud.dispose, [readAloud]);
     useListenable(readAloud);
     useEffect(() {
-      readAloud.setVoice(
-        rate: settingsValue?.ttsRate ?? 0.5,
-        pitch: settingsValue?.ttsPitch ?? 1,
-      );
+      applyReadAloudSettings(readAloud, settingsValue);
       return null;
-    }, [readAloud, settingsValue?.ttsRate, settingsValue?.ttsPitch]);
+    }, [readAloud, settingsValue]);
     final speaking = readAloud.isActive ? readAloud.currentSegment : null;
 
     // 読み上げ中（一時停止中を含む）は画面を消さない

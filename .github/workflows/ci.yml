@@ -49,6 +49,11 @@ jobs:
       - name: Test (root)
         run: flutter test
 
+      # フォーク用: 縦書きの部品（ページの作り直しなど）にも手を入れたため検査する
+      - name: Test (tategaki)
+        working-directory: packages/tategaki
+        run: flutter test
+
   build:
     name: Build Android APK
     runs-on: ubuntu-latest
