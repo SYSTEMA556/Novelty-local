@@ -23,34 +23,35 @@ enum SpeechRole {
 /// 声の高さ・速さ・音量の倍率を持つ（強さ 1・演技 100% のときの値）。
 enum SpeechEmotion {
   /// 普通。
-  neutral('普通', pitch: 1, rate: 1, volume: 1),
+  neutral('普通', pitch: 1, rate: 1, volume: 1, intonation: 1),
 
   /// 喜び・楽しさ。
-  joy('喜び', pitch: 1.12, rate: 1.06, volume: 1),
+  joy('喜び', pitch: 1.12, rate: 1.06, volume: 1, intonation: 1.25),
 
   /// 怒り。低めで速く。
-  anger('怒り', pitch: 0.93, rate: 1.1, volume: 1),
+  anger('怒り', pitch: 0.93, rate: 1.1, volume: 1, intonation: 1.3),
 
   /// 叫び。高めで速く。
-  shout('叫び', pitch: 1.16, rate: 1.08, volume: 1),
+  shout('叫び', pitch: 1.16, rate: 1.08, volume: 1, intonation: 1.45),
 
   /// 悲しみ。低めでゆっくり、少し小さく。
-  sadness('悲しみ', pitch: 0.9, rate: 0.84, volume: 0.85),
+  sadness('悲しみ', pitch: 0.9, rate: 0.84, volume: 0.85, intonation: 0.75),
 
   /// 驚き。高く速く。
-  surprise('驚き', pitch: 1.2, rate: 1.1, volume: 1),
+  surprise('驚き', pitch: 1.2, rate: 1.1, volume: 1, intonation: 1.4),
 
   /// 怯え。少し高く速く、小さく。
-  fear('怯え', pitch: 1.06, rate: 1.14, volume: 0.8),
+  fear('怯え', pitch: 1.06, rate: 1.14, volume: 0.8, intonation: 1.15),
 
   /// ささやき。ゆっくり、小さく。
-  whisper('ささやき', pitch: 0.95, rate: 0.88, volume: 0.5);
+  whisper('ささやき', pitch: 0.95, rate: 0.88, volume: 0.5, intonation: 0.85);
 
   const SpeechEmotion(
     this.label, {
     required this.pitch,
     required this.rate,
     required this.volume,
+    required this.intonation,
   });
 
   /// 表示名。
@@ -64,6 +65,9 @@ enum SpeechEmotion {
 
   /// 音量の倍率。
   final double volume;
+
+  /// 抑揚の倍率（VOICEVOX でだけ使う）。
+  final double intonation;
 }
 
 /// 実際に音声合成へ渡す値。
@@ -74,6 +78,7 @@ class SpeechProsody {
     required this.rate,
     required this.pitch,
     required this.volume,
+    this.intonation = 1,
   });
 
   /// 速さ（0.1〜1.0。0.5 が標準）。
@@ -85,19 +90,23 @@ class SpeechProsody {
   /// 音量（0.0〜1.0）。
   final double volume;
 
+  /// 抑揚の大きさ（1.0 が標準。VOICEVOX でだけ使う）。
+  final double intonation;
+
   @override
   bool operator ==(Object other) =>
       other is SpeechProsody &&
       other.rate == rate &&
       other.pitch == pitch &&
-      other.volume == volume;
+      other.volume == volume &&
+      other.intonation == intonation;
 
   @override
-  int get hashCode => Object.hash(rate, pitch, volume);
+  int get hashCode => Object.hash(rate, pitch, volume, intonation);
 
   @override
   String toString() => 'SpeechProsody(rate: $rate, pitch: $pitch, '
-      'volume: $volume)';
+      'volume: $volume, intonation: $intonation)';
 }
 
 /// 1文の「演出」（役割・感情・強さ・読んだあとの間）。
@@ -157,6 +166,7 @@ class SpeechDirection {
           .clamp(0.5, 2.0),
       volume: (scale(roleVolume, 1) * scale(emotion.volume, intensity))
           .clamp(0.2, 1.0),
+      intonation: scale(emotion.intonation, intensity).clamp(0.0, 2.0),
     );
   }
 

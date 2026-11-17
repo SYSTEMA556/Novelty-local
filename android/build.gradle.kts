@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // VOICEVOX コアの Android 版（CI が公式の java_packages.zip を展開する）
+        maven { url = uri("${rootDir}/voicevox-maven") }
     }
 }
 

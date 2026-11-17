@@ -71,3 +71,8 @@ coverage/
 # End of https://www.toptal.com/developers/gitignore/api/flutter
 novelty_backup*.db
 /package.json
+
+# VOICEVOX の配布物（CI がビルド時に取得する。リポジトリには入れない）
+android/voicevox-maven/
+android/app/src/main/assets/voicevox/
+android/app/src/main/jniLibs/

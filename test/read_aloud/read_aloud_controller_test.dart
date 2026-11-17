@@ -22,8 +22,24 @@ class FakeEngine implements SpeechEngine {
   final applied = <(SpeechProsody, String?)>[];
 
   @override
-  Future<void> apply(SpeechProsody prosody, {String? voice}) async {
+  Future<void> apply(
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  }) async {
     applied.add((prosody, voice));
+  }
+
+  final prefetched = <String>[];
+
+  @override
+  Future<void> prefetch(
+    String text,
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  }) async {
+    prefetched.add(text);
   }
 
   @override
@@ -206,5 +222,17 @@ void main() {
       expect(e.applied.first.$1.rate, greaterThan(0.5));
       c.dispose();
     });
+  });
+
+  test('読んでいる間に次の文を先読みさせる', () async {
+    final e = FakeEngine();
+    final c = ReadAloudController(
+      document: SpeechDocument.fromElements([PlainText('一つ目。二つ目。')]),
+      engine: e,
+    );
+    unawaited(c.playFrom(0));
+    await pumpEventQueue();
+    expect(e.prefetched, ['二つ目。']);
+    c.dispose();
   });
 }

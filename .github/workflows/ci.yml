@@ -94,6 +94,46 @@ jobs:
           storeFile=ci-keystore.jks
           PROPS
 
+      # VOICEVOX（四国めたんの声）の公式の配布物を取得して APK に同梱する。
+      # 声のモデル・ONNX Runtime とも、利用規約で「アプリケーションに組み込んで
+      # 再配布することができます」とされている（クレジット表記が必要）。
+      - name: Fetch VOICEVOX
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CORE_VERSION: "0.17.1"
+          ORT_VERSION: "1.23.2"
+          VVM_VERSION: "0.17.1"
+        run: |
+          set -euxo pipefail
+          work=$(mktemp -d)
+          # コア（Android 版の Maven パッケージ）
+          gh release download "$CORE_VERSION" -R VOICEVOX/voicevox_core \
+            -p java_packages.zip -D "$work"
+          mkdir -p android/voicevox-maven
+          unzip -q -o "$work/java_packages.zip" -d android/voicevox-maven
+          find android/voicevox-maven -name '*.aar'
+          # ONNX Runtime（VOICEVOX 版・arm64）
+          gh release download "voicevox_onnxruntime-$ORT_VERSION" \
+            -R VOICEVOX/onnxruntime-builder \
+            -p "voicevox_onnxruntime-android-arm64-$ORT_VERSION.tgz" -D "$work"
+          tar -xzf "$work/voicevox_onnxruntime-android-arm64-$ORT_VERSION.tgz" -C "$work"
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          find "$work" -name 'libvoicevox_onnxruntime*.so*' -type f \
+            -exec cp -v {} android/app/src/main/jniLibs/arm64-v8a/libvoicevox_onnxruntime.so \;
+          # Open JTalk の辞書（zip にして入れ、初回に端末で展開する）
+          gh release download v1.11.1 -R r9y9/open_jtalk \
+            -p open_jtalk_dic_utf_8-1.11.tar.gz -D "$work"
+          tar -xzf "$work/open_jtalk_dic_utf_8-1.11.tar.gz" -C "$work"
+          mkdir -p android/app/src/main/assets/voicevox
+          (cd "$work" && zip -q -r open_jtalk_dic.zip open_jtalk_dic_utf_8-1.11)
+          mv "$work/open_jtalk_dic.zip" android/app/src/main/assets/voicevox/
+          # 声のモデル（0.vvm: めたん基本／5.vvm: めたんのささやき・ヒソヒソ）
+          for m in 0.vvm 5.vvm TERMS.txt; do
+            gh release download "$VVM_VERSION" -R VOICEVOX/voicevox_vvm \
+              -p "$m" -D android/app/src/main/assets/voicevox
+          done
+          ls -la android/app/src/main/assets/voicevox android/app/src/main/jniLibs/arm64-v8a
+
       - name: Build Android APK (release)
         run: flutter build apk --release
 

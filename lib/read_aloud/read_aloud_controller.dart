@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
+import 'package:novelty/read_aloud/voicevox_engine.dart';
 
 /// 読み上げエンジン（端末の音声合成）の抽象。
 ///
@@ -12,7 +13,20 @@ abstract class SpeechEngine {
   /// 次に読む文の速さ・高さ・音量・声を設定する。
   ///
   /// [voice] は声の名前（null なら端末の標準の声）。
-  Future<void> apply(SpeechProsody prosody, {String? voice});
+  /// [direction] は演出（演技を切っているときは null）。声の種類を選ぶのに使う。
+  Future<void> apply(
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  });
+
+  /// 次に読む文の声を先に作っておく（作る必要のないエンジンでは何もしない）。
+  Future<void> prefetch(
+    String text,
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  });
 
   /// [text] を読み上げ、読み終わる（または止められる）まで待つ。
   Future<void> speak(String text);
@@ -110,7 +124,19 @@ class FlutterTtsEngine implements SpeechEngine {
   }
 
   @override
-  Future<void> apply(SpeechProsody prosody, {String? voice}) async {
+  Future<void> prefetch(
+    String text,
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  }) async {}
+
+  @override
+  Future<void> apply(
+    SpeechProsody prosody, {
+    String? voice,
+    SpeechDirection? direction,
+  }) async {
     await _init();
     if (!_voiceApplied || voice != _lastVoice) {
       _voiceApplied = true;
@@ -161,7 +187,7 @@ class ReadAloudController extends ChangeNotifier {
     SpeechEngine? engine,
     this.onPositionChanged,
     this.onCompleted,
-  }) : _engine = engine ?? FlutterTtsEngine();
+  }) : _engine = engine ?? CompositeSpeechEngine();
 
   /// 読み上げる本文。
   final SpeechDocument document;
@@ -198,6 +224,17 @@ class ReadAloudController extends ChangeNotifier {
 
   /// 演技の強さ（0.0〜1.0）。
   double get acting => _acting;
+
+  SpeechProsody _prosodyOf(SpeechDirection direction) => direction.prosody(
+    baseRate: _rate,
+    basePitch: _pitch,
+    acting: _acting,
+  );
+
+  String? _voiceOf(SpeechDirection direction) =>
+      direction.role == SpeechRole.narration
+      ? _narrationVoice
+      : _dialogueVoice ?? _narrationVoice;
 
   /// 現在の状態。
   ReadAloudStatus get status => _status;
@@ -299,16 +336,24 @@ class ReadAloudController extends ChangeNotifier {
       final direction = directions[_index];
       try {
         await _engine.apply(
-          direction.prosody(
-            baseRate: _rate,
-            basePitch: _pitch,
-            acting: _acting,
-          ),
-          voice: direction.role == SpeechRole.narration
-              ? _narrationVoice
-              : _dialogueVoice ?? _narrationVoice,
+          _prosodyOf(direction),
+          voice: _voiceOf(direction),
+          direction: _acting > 0 ? direction : null,
         );
         if (generation != _generation) return;
+        // 声を作るエンジンでは、読んでいる間に次の文の声を作っておく
+        final nextIndex = _index + 1;
+        if (nextIndex < document.segments.length) {
+          final next = directions[nextIndex];
+          unawaited(
+            _engine.prefetch(
+              document.segments[nextIndex].text,
+              _prosodyOf(next),
+              voice: _voiceOf(next),
+              direction: _acting > 0 ? next : null,
+            ),
+          );
+        }
         await _engine.speak(document.segments[_index].text);
       } on Object catch (e) {
         debugPrint('Read aloud failed: $e');

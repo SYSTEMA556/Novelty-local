@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
+import 'package:novelty/read_aloud/voicevox_engine.dart';
 import 'package:novelty/utils/reader_appearance.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
@@ -658,22 +659,37 @@ class _VoicePicker extends StatefulWidget {
 }
 
 class _VoicePickerState extends State<_VoicePicker> {
-  late final Future<List<TtsVoice>> _voices = availableJapaneseVoices();
+  late final Future<(List<TtsVoice>, bool)> _voices = () async {
+    final results = await Future.wait<Object>([
+      availableJapaneseVoices(),
+      VoicevoxBridge.isAvailable(),
+    ]);
+    return (results[0] as List<TtsVoice>, results[1] as bool);
+  }();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<TtsVoice>>(
+    return FutureBuilder<(List<TtsVoice>, bool)>(
       future: _voices,
       builder: (context, snapshot) {
-        final voices = snapshot.data ?? const <TtsVoice>[];
-        if (voices.length < 2) return const SizedBox.shrink();
+        final (voices, voicevox) = snapshot.data ?? (const <TtsVoice>[], false);
+        if (voices.length < 2 && !voicevox) return const SizedBox.shrink();
         return Column(
           children: [
+            if (voicevox)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text(
+                  'VOICEVOX の声は端末の中で声を作ります。初めて使うときは'
+                  '準備に数十秒かかり、読み始めにも少し時間がかかります。',
+                ),
+              ),
             _dropdown(
               title: '地の文の声',
               value: widget.narrationVoice,
               defaultLabel: '端末の標準',
               voices: voices,
+              voicevox: voicevox,
               onChanged: widget.onNarrationChanged,
             ),
             _dropdown(
@@ -681,6 +697,7 @@ class _VoicePickerState extends State<_VoicePicker> {
               value: widget.dialogueVoice,
               defaultLabel: '地の文と同じ',
               voices: voices,
+              voicevox: voicevox,
               onChanged: widget.onDialogueChanged,
             ),
           ],
@@ -694,9 +711,13 @@ class _VoicePickerState extends State<_VoicePicker> {
     required String value,
     required String defaultLabel,
     required List<TtsVoice> voices,
+    required bool voicevox,
     required ValueChanged<String> onChanged,
   }) {
-    final known = value.isEmpty || voices.any((v) => v.name == value);
+    final known =
+        value.isEmpty ||
+        voices.any((v) => v.name == value) ||
+        (voicevox && voicevoxCharacterOf(value) != null);
     return ListTile(
       title: Text(title),
       trailing: DropdownButton<String>(
@@ -706,6 +727,10 @@ class _VoicePickerState extends State<_VoicePicker> {
         },
         items: [
           DropdownMenuItem(value: '', child: Text(defaultLabel)),
+          if (voicevox)
+            for (final c in voicevoxCharacters)
+              // クレジット表記を兼ねて「VOICEVOX:四国めたん」と出す
+              DropdownMenuItem(value: c.voice, child: Text(c.credit)),
           for (var i = 0; i < voices.length; i++)
             DropdownMenuItem(
               value: voices[i].name,

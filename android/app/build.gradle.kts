@@ -51,10 +51,17 @@ android {
         applicationId = "moe.l4ph.novelty"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // VOICEVOX コア（Android 版）の要件に合わせて下限を上げる
+        minSdk = maxOf(flutter.minSdkVersion, 26)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // 声のモデル（.vvm）と辞書（.zip）は圧縮せずに入れる
+    // （元々圧縮済みで、圧縮しないとファイルの大きさをそのまま取れるため）
+    androidResources {
+        noCompress += listOf("vvm", "zip")
     }
 
     buildTypes {
@@ -72,4 +79,6 @@ flutter {
 
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.8.0"))
+    // VOICEVOX コア（CI が android/voicevox-maven に公式の配布物を展開する）
+    implementation("jp.hiroshiba.voicevoxcore:voicevoxcore-android:0.17.1")
 }
