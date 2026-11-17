@@ -56,6 +56,9 @@ jobs:
 
   build:
     name: Build Android APK
+    # 最新の APK をリリースに置くため
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -148,3 +151,25 @@ jobs:
           name: novelty-local-apk
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
+
+      # スマホで zip を展開しなくて済むよう、APK をそのままリリースにも置く
+      # （いつも同じ「apk-latest」に上書きする。ブラウザから .apk を直接ダウンロードできる）
+      - name: Publish APK to release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cp build/app/outputs/flutter-apk/app-release.apk novelty-local.apk
+          notes="最新のビルド（${GITHUB_SHA::7}、$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M')）。
+          novelty-local.apk をスマホでダウンロードして、そのままインストールしてください。
+          読み上げの声に VOICEVOX:四国めたん・ずんだもん・九州そら・東北きりたん を使用しています。
+          ライセンス表記は THIRD_PARTY_NOTICES.md を参照してください。"
+          if gh release view apk-latest >/dev/null 2>&1; then
+            gh release upload apk-latest novelty-local.apk --clobber
+            gh release edit apk-latest --notes "$notes" --prerelease
+          else
+            gh release create apk-latest novelty-local.apk \
+              --target "$GITHUB_SHA" --prerelease \
+              --title "Novelty-local 最新ビルド" --notes "$notes"
+          fi
