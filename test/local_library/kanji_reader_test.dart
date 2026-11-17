@@ -17,6 +17,7 @@ KanjiReader _reader() => KanjiReader.fromTsv(
     '赤川\tあかがわ',
     '次郎\tじろう',
     '夏目\tなつめ',
+    'Ｘ線\tえっくすせん',
   ].join('\n'),
 );
 
@@ -45,6 +46,13 @@ void main() {
       expect(reader.read('赤川次郎'), 'あかがわじろう');
       expect(reader.read('自由'), 'じ由');
       expect(reader.read('ABCの山'), 'ABCのやま');
+    });
+
+    test('英字・数字で始まる語はかなに直さない', () {
+      final reader = _reader();
+      expect(reader.read('Ｘ線の山'), 'Ｘ線のやま');
+      expect(KanaIndex.labelOf(reader.read('Ｘ線の山')), 'X');
+      expect(reader.read('internet'), 'internet');
     });
 
     test('辞書の語そのものを引ける', () {

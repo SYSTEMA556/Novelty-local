@@ -101,7 +101,8 @@ class KanjiReader {
     var i = 0;
     while (i < limit) {
       final head = text.codeUnitAt(i);
-      final block = _blockOf(head);
+      // 英字・数字から始まる語（「Ｘ線」など）はかなに直さず、A〜Z・# に残す
+      final block = _isLatinOrDigit(head) ? null : _blockOf(head);
       var matched = 0;
       if (block != null) {
         final maxKey = _blocks[head]!.$3;
@@ -125,6 +126,14 @@ class KanjiReader {
     return _cache[text] = buffer.toString();
   }
 }
+
+bool _isLatinOrDigit(int c) =>
+    (c >= 0x30 && c <= 0x39) ||
+    (c >= 0x41 && c <= 0x5A) ||
+    (c >= 0x61 && c <= 0x7A) ||
+    (c >= 0xFF10 && c <= 0xFF19) ||
+    (c >= 0xFF21 && c <= 0xFF3A) ||
+    (c >= 0xFF41 && c <= 0xFF5A);
 
 /// gzip 圧縮された辞書を展開して [KanjiReader] を作る。
 KanjiReader parseKanjiReadings(List<int> compressed) =>
