@@ -1,0 +1,33 @@
+# 調査用（一時的）：VOICEVOX の配布物の名前と利用規約を確認する
+name: VOICEVOX probe
+on:
+  push:
+    branches: [feat/local-text-file]
+    paths: [.github/workflows/voicevox-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for repo in VOICEVOX/voicevox_core VOICEVOX/onnxruntime-builder VOICEVOX/voicevox_vvm r9y9/open_jtalk; do
+            echo "=== $repo"
+            gh api "repos/$repo/releases?per_page=3" --jq '.[] | "\(.tag_name) prerelease=\(.prerelease)\n" + ([.assets[] | "  \(.name) \(.size)"] | join("\n"))' | head -60
+          done
+      - name: ONNX Runtime terms
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/VOICEVOX/onnxruntime-builder/releases?per_page=10" --jq '[.[] | select(.body | test("voicevox-onnxruntime-terms"))][0] | .tag_name, .body'
+      - name: Java package contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh api repos/VOICEVOX/voicevox_core/releases/latest --jq .tag_name)
+          echo "core latest: $tag"
+          gh release download "$tag" -R VOICEVOX/voicevox_core -p 'java_packages.zip' -D /tmp/j || true
+          unzip -l /tmp/j/java_packages.zip | head -60 || true
