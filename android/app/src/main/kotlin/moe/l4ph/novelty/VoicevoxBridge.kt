@@ -18,9 +18,15 @@ import jp.hiroshiba.voicevoxcore.blocking.OpenJtalk
 import jp.hiroshiba.voicevoxcore.blocking.Synthesizer
 import jp.hiroshiba.voicevoxcore.blocking.VoiceModelFile
 import java.io.File
+import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.FutureTask
+import java.util.concurrent.PriorityBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.zip.ZipInputStream
 
 /**
@@ -40,8 +46,35 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     }
     private val main = Handler(Looper.getMainLooper())
 
-    // 声を作る専用スレッド（コアは1つずつ使う）
-    private val synthesisThread: ExecutorService = Executors.newSingleThreadExecutor()
+    // 声を作る専用スレッド（コアは1つずつ使う）。
+    // 「今読む文」を先読みより先に作れるよう、優先度順に取り出す。
+    private val synthesisQueue = PriorityBlockingQueue<Runnable>()
+    private val synthesisThread = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS, synthesisQueue,
+    )
+    private val taskSequence = AtomicLong()
+
+    /** 優先度付きの仕事（数字が小さいほど先。同じなら頼まれた順）。 */
+    private inner class PrioritizedTask<T>(
+        val priority: Int,
+        callable: Callable<T>,
+    ) : FutureTask<T>(callable), Comparable<PrioritizedTask<*>> {
+        private val sequence = taskSequence.incrementAndGet()
+
+        @Volatile var started = false
+            private set
+
+        override fun run() {
+            started = true
+            super.run()
+        }
+
+        override fun compareTo(other: PrioritizedTask<*>): Int =
+            compareValuesBy(this, other, { it.priority }, { it.sequence })
+    }
+
+    private fun <T> runOnSynthesis(priority: Int, block: () -> T): PrioritizedTask<T> =
+        PrioritizedTask(priority, Callable { block() }).also { synthesisThread.execute(it) }
 
     // 結果を待つためのスレッド（メインスレッドを止めないため）
     private val waiters: ExecutorService = Executors.newCachedThreadPool()
@@ -90,24 +123,36 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             "prepare" -> waitInBackground(result) { ensurePrepared(); true }
             "synthesize" -> {
                 val request = SynthesisRequest.from(call)
-                waitInBackground(result) { synthesize(request, now = true).get().absolutePath }
+                waitInBackground(result) {
+                    val watch = System.nanoTime()
+                    val file = synthesize(request, PRIORITY_NOW).get()
+                    lastWaitMs = (System.nanoTime() - watch) / 1_000_000
+                    file.absolutePath
+                }
             }
             "prefetch" -> {
                 val request = SynthesisRequest.from(call)
                 val ahead = call.argument<Int>("ahead") ?: 1
                 // 準備が済んでいて、今のモードで作り溜める範囲のときだけ先に作る（待たない）
                 if (synthesizer != null && ahead <= prefetchDepth()) {
-                    synthesize(request, now = false)
+                    synthesize(request, PRIORITY_NOW + ahead)
                 }
                 result.success(null)
             }
             "configure" -> {
                 performanceMode = call.argument<Int>("performance") ?: 0
                 // 準備済みなら、スレッド数の変更や全モデルの読み込みを裏で行う
-                if (synthesizer != null) synthesisThread.submit { applyPerformance() }
+                if (synthesizer != null) runOnSynthesis(PRIORITY_SETUP) { applyPerformance() }
                 result.success(mapOf("fullPower" to isFullPower()))
             }
             "play" -> play(call.argument<String>("path")!!, result)
+            "cancelPending" -> {
+                cancelPending()
+                result.success(null)
+            }
+            "lastTiming" -> result.success(
+                mapOf("synthesisMs" to lastSynthesisMs, "waitMs" to lastWaitMs, "audioMs" to lastAudioMs),
+            )
             "stop" -> {
                 stopPlayback()
                 result.success(null)
@@ -132,7 +177,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
 
     private fun ensurePrepared() {
         val future = synchronized(this) {
-            prepareFuture ?: synthesisThread.submit { prepare() }.also { prepareFuture = it }
+            prepareFuture ?: runOnSynthesis(PRIORITY_SETUP) { prepare() }.also { prepareFuture = it }
         }
         try {
             future.get()
@@ -246,7 +291,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     private fun isFullPower(): Boolean =
         performanceMode == 1 || (performanceMode == 2 && isCharging())
 
-    private fun prefetchDepth(): Int = if (isFullPower()) PREFETCH_FULL else 1
+    private fun prefetchDepth(): Int = if (isFullPower()) PREFETCH_FULL else PREFETCH_STANDARD
 
     // 標準は4コアまで（熱と電池を抑える）、全力は全コア
     private fun desiredThreads(): Int {
@@ -340,18 +385,13 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     /**
      * 声を作る（同じ文・同じ設定なら、できているもの・作っている途中のものを使う）。
      *
-     * [now] は「今すぐ読む文」。作り溜めに無かったとき（読み始め・移動した直後）は、
-     * 並んでいるだけの古い先読みを取り消して、この文を先に作る。
+     * [priority] が小さいほど先に作る。今読む文は [PRIORITY_NOW]、
+     * n 文先の先読みは PRIORITY_NOW + n。作っている途中の仕事は取り消さない
+     * （途中で捨てると、その分の計算が丸ごと無駄になるため）。
      */
-    private fun synthesize(request: SynthesisRequest, now: Boolean): Future<File> = synchronized(cache) {
+    private fun synthesize(request: SynthesisRequest, priority: Int): Future<File> = synchronized(cache) {
         cache[request.key]?.let { return it }
-        if (now) {
-            val stale = cache.entries.filter { !it.value.isDone }.map { it.key }
-            for (key in stale) {
-                cache.remove(key)?.cancel(false)
-            }
-        }
-        val future = synthesisThread.submit<File> {
+        val future = runOnSynthesis(priority) {
             ensurePreparedOnSynthesisThread()
             applyThreadPriority()
             ensureModelFor(request.styleId)
@@ -366,12 +406,30 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 prePhonemeLength = 0.05
                 postPhonemeLength = 0.05
             }
+            val started = System.nanoTime()
             val wav = step("声の合成") { synth.synthesis(query, request.styleId).perform() }
+            lastSynthesisMs = (System.nanoTime() - started) / 1_000_000
+            // 24kHz・16bit・モノラルの WAV（先頭 44 バイトはヘッダー）
+            lastAudioMs = ((wav.size - 44).coerceAtLeast(0) / 48).toLong()
             File.createTempFile("voicevox_", ".wav", context.cacheDir).apply { writeBytes(wav) }
         }
         cache[request.key] = future
         future
     }
+
+    // 並んでいるだけでまだ始まっていない先読みを取り消す（移動・停止のとき）
+    private fun cancelPending() = synchronized(cache) {
+        val stale = cache.entries.filter { (_, f) ->
+            f is PrioritizedTask<*> && !f.started && !f.isDone
+        }.map { it.key }
+        for (key in stale) cache.remove(key)?.cancel(false)
+        synthesisQueue.removeIf { it is PrioritizedTask<*> && it.isCancelled }
+    }
+
+    // 処理時間の記録（診断で「声1秒を作るのに何秒かかるか」を見るため）
+    @Volatile private var lastSynthesisMs = 0L
+    @Volatile private var lastWaitMs = 0L
+    @Volatile private var lastAudioMs = 0L
 
     // 準備は同じスレッドで行うため、ここでは待たずにその場で行う
     private fun ensurePreparedOnSynthesisThread() {
@@ -453,6 +511,10 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         private const val DICT_ZIP = "open_jtalk_dic.zip"
         private const val CACHE_SIZE = 10
         private const val PREFETCH_FULL = 5
+        private const val PREFETCH_STANDARD = 2
+
+        private const val PRIORITY_SETUP = 0
+        private const val PRIORITY_NOW = 10
 
         // 標準モードで同時に読み込んでおくモデルの数（メモリを抑える）
         private const val MAX_LOADED_MODELS_STANDARD = 3

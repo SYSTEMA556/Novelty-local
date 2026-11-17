@@ -234,6 +234,22 @@ class VoicevoxBridge {
 
   /// 鳴らしている声を止める。
   static Future<void> stop() => _channel.invokeMethod<void>('stop');
+
+  /// 並んでいるだけでまだ始まっていない先読みを取り消す（移動・停止のとき）。
+  static Future<void> cancelPending() =>
+      _channel.invokeMethod<void>('cancelPending');
+
+  /// 最後に作った声の処理時間（合成にかかった時間・待った時間・声の長さ、ミリ秒）。
+  static Future<({int synthesisMs, int waitMs, int audioMs})>
+  lastTiming() async {
+    final m = await _channel.invokeMapMethod<String, Object?>('lastTiming');
+    int read(String key) => (m?[key] as num?)?.toInt() ?? 0;
+    return (
+      synthesisMs: read('synthesisMs'),
+      waitMs: read('waitMs'),
+      audioMs: read('audioMs'),
+    );
+  }
 }
 
 /// VOICEVOX の失敗を、人が読める文にする（どの段階で何が起きたか）。
@@ -253,6 +269,10 @@ class VoicevoxEngine implements SpeechEngine {
   VoicevoxRequest? _next;
   bool _stopped = false;
 
+  // 今読む文の「声を作って」を Android へ送ったら完了する。
+  // 先読みはこれを待ってから送る（先読みが先に始まって今読む文を待たせないため）。
+  Completer<void>? _dispatched;
+
   static Future<void>? _prepared;
 
   /// 最後に起きた VOICEVOX の失敗（無ければ null）。画面に出して原因を伝える。
@@ -271,32 +291,53 @@ class VoicevoxEngine implements SpeechEngine {
     }
   }
 
-  /// 準備して短い文を1つ作ってみる（設定画面の診断用）。成功なら null。
-  static Future<String?> diagnose() async {
+  /// 準備して文を1つ作ってみる（設定画面の診断用）。
+  ///
+  /// 成功なら、準備の時間と「声1秒を作るのにかかる時間」を返す。
+  /// 声の長さより作る時間の方が短ければ（1倍速より速ければ）、途切れずに読める。
+  static Future<({bool ok, String message})> diagnose() async {
     try {
       final watch = Stopwatch()..start();
       await ensurePrepared();
       final prepared = watch.elapsedMilliseconds;
-      await VoicevoxBridge.synthesize(
-        VoicevoxRequest(
-          text: 'テストです。',
-          styleId: voicevoxCharacters.first.normal,
-          speed: 1,
-          pitch: 0,
-          intonation: 1,
-          volume: 1,
-        ),
-      );
+      String? last;
+      // 1回目は慣らし（初回だけ遅いことがある）、2回目を測る
+      const samples = [
+        'テストです。',
+        '吾輩は猫である。名前はまだ無い。どこで生まれたかとんと見当がつかぬ。',
+      ];
+      for (final text in samples) {
+        last = await VoicevoxBridge.synthesize(
+          VoicevoxRequest(
+            text: text,
+            styleId: voicevoxCharacters.first.normal,
+            speed: 1,
+            pitch: 0,
+            intonation: 1,
+            volume: 1,
+          ),
+        );
+      }
+      final timing = await VoicevoxBridge.lastTiming();
       lastError.value = null;
-      debugPrint(
-        'VOICEVOX 診断: 準備 ${prepared}ms・合成 '
-        '${watch.elapsedMilliseconds - prepared}ms',
+      final audio = timing.audioMs / 1000;
+      final synth = timing.synthesisMs / 1000;
+      final speed = synth == 0 ? 0 : audio / synth;
+      return (
+        ok: last != null,
+        message: [
+          '準備できました（準備 ${(prepared / 1000).toStringAsFixed(1)} 秒）',
+          '声 ${audio.toStringAsFixed(1)} 秒を '
+              '${synth.toStringAsFixed(1)} 秒で作成'
+              '（${speed.toStringAsFixed(2)} 倍速）',
+          if (speed >= 1) '1倍速より速いので、先読みが効けば途切れずに読めます',
+          if (speed > 0 && speed < 1) '1倍速より遅いため、文と文の間に待ちが出ます',
+        ].join('\n'),
       );
-      return null;
     } on Object catch (e) {
       final message = describeVoicevoxError(e);
       lastError.value = message;
-      return message;
+      return (ok: false, message: '失敗しました：\n$message');
     }
   }
 
@@ -310,6 +351,7 @@ class VoicevoxEngine implements SpeechEngine {
     SpeechDirection? direction,
   }) async {
     _stopped = false;
+    _dispatched = Completer<void>();
     // 文は speak で受け取るので、ここでは値だけ覚えておく
     _next = VoicevoxRequest.of('', prosody, _characterOf(voice), direction);
   }
@@ -323,6 +365,11 @@ class VoicevoxEngine implements SpeechEngine {
     int ahead = 1,
   }) async {
     try {
+      // 今読む文を先に送る。来なくても少し待ったら先読みを始める
+      await _dispatched?.future.timeout(
+        const Duration(seconds: 3),
+        onTimeout: () {},
+      );
       await VoicevoxBridge.prefetch(
         VoicevoxRequest.of(text, prosody, _characterOf(voice), direction),
         ahead: ahead,
@@ -339,7 +386,7 @@ class VoicevoxEngine implements SpeechEngine {
     await ensurePrepared();
     final String? path;
     try {
-      path = await VoicevoxBridge.synthesize(
+      final pending = VoicevoxBridge.synthesize(
         VoicevoxRequest(
           text: text,
           styleId: base.styleId,
@@ -349,6 +396,9 @@ class VoicevoxEngine implements SpeechEngine {
           volume: base.volume,
         ),
       );
+      final dispatched = _dispatched;
+      if (dispatched != null && !dispatched.isCompleted) dispatched.complete();
+      path = await pending;
     } on Object catch (e) {
       lastError.value = describeVoicevoxError(e);
       rethrow;
@@ -362,6 +412,8 @@ class VoicevoxEngine implements SpeechEngine {
   Future<void> stop() async {
     _stopped = true;
     try {
+      // 移動・停止したら、古い先読みはもう要らない
+      await VoicevoxBridge.cancelPending();
       await VoicevoxBridge.stop();
     } on Object catch (e) {
       debugPrint('VOICEVOX を止められませんでした: $e');

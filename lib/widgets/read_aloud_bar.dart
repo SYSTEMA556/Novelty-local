@@ -30,8 +30,8 @@ void applyReadAloudSettings(
     acting: (settings?.ttsActing ?? 60) / 100,
     narrationVoice: voice(settings?.ttsNarrationVoice),
     dialogueVoice: voice(settings?.ttsDialogueVoice),
-    // 全力のときは5文先まで作り溜める（実際の深さは Android 側が決める）
-    prefetchAhead: (settings?.ttsPerformance ?? 0) == 0 ? 1 : 5,
+    // 標準は2文先、全力は5文先まで作り溜める（実際の深さは Android 側が決める）
+    prefetchAhead: (settings?.ttsPerformance ?? 0) == 0 ? 2 : 5,
   );
   unawaited(
     VoicevoxBridge.configure(performance: settings?.ttsPerformance ?? 0),

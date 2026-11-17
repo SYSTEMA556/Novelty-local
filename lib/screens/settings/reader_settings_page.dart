@@ -415,7 +415,7 @@ class ReaderSettingsPage extends ConsumerWidget {
               const SizedBox(height: 8),
               Text(
                 [
-                  '標準：4コアまで使い、次の1文だけ先に声を作ります。',
+                  '標準：4コアまで使い、2文先まで声を作っておきます。',
                   '使う声のモデルだけを読み込み、メモリを抑えます。',
                   '全力：全コアを優先度高めで使い、5文先まで作り溜めます。',
                   '全員の声を読み込んでおくため、メモリを多く使い、',
@@ -869,15 +869,11 @@ class _VoicevoxDiagnosisState extends State<_VoicevoxDiagnosis> {
       _running = true;
       _result = null;
     });
-    final watch = Stopwatch()..start();
-    final error = await VoicevoxEngine.diagnose();
+    final result = await VoicevoxEngine.diagnose();
     if (!mounted) return;
-    final seconds = (watch.elapsedMilliseconds / 1000).toStringAsFixed(1);
     setState(() {
       _running = false;
-      _result = error == null
-          ? '準備できました（$seconds 秒）'
-          : '失敗しました：\n$error';
+      _result = result.message;
     });
   }
 
@@ -897,7 +893,7 @@ class _VoicevoxDiagnosisState extends State<_VoicevoxDiagnosis> {
               : const Icon(Icons.build_outlined),
           title: const Text('VOICEVOX の準備・診断'),
           subtitle: result == null
-              ? const Text('声の部品を準備して、短い文を1つ作ってみます')
+              ? const Text('声の部品を準備して、声を作る速さを測ります')
               : SelectableText(result),
           onTap: _running ? null : () => unawaited(_run()),
         );
