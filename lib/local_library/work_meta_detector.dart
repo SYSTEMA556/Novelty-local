@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/meta_rules.dart';
+import 'package:novelty/utils/plain_text_novel_parser.dart';
 
 /// テキストファイルから読み取った作品情報。
 @immutable
@@ -207,9 +208,19 @@ class WorkMetaDetector {
       final titleMatch = _bracketTitle.firstMatch(lines[i]);
       if (titleMatch != null && title.isEmpty) title = titleMatch.group(1)!;
     }
-    final normalized = _normalizeAuthor(author);
+    // 合同誌などで作者が多すぎるときは、最初の1人（主催者）を作者にする
+    final normalized =
+        _normalizeAuthor(author) ?? _normalizeAuthor(_firstName(author));
     if (normalized == null) return null;
     return WorkMeta(title: title.trim(), author: normalized);
+  }
+
+  static String? _firstName(String? authors) {
+    if (authors == null) return null;
+    for (final name in authors.split(RegExp(r'[\s、,，・]+'))) {
+      if (name.isNotEmpty) return name;
+    }
+    return null;
   }
 
   static WorkMeta? _detectAozora(List<String> lines) {
@@ -268,8 +279,10 @@ class WorkMetaDetector {
         : head;
     return [
       for (final raw in text.split(RegExp(r'\r\n|\r|\n')))
-        if (raw.trim().isNotEmpty && !_tagLine.hasMatch(raw)) raw.trim(),
-    ];
+        if (raw.trim().isNotEmpty && !_tagLine.hasMatch(raw))
+          // 行の中のタグ（<img …> が並んだ行など）や注記も取り除く
+          PlainTextNovelParser.cleanLine(raw).trim(),
+    ].where((line) => line.isNotEmpty).toList();
   }
 
   static String? _normalizeAuthor(String? raw) {

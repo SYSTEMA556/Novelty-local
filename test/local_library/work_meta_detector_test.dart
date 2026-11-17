@@ -76,6 +76,36 @@ void main() {
     });
   });
 
+  group('HTML・注記の混ざった冒頭', () {
+    test('タグや注記だけの行を飛ばして青空文庫形式を読む', () {
+      const head =
+          '<img height=600 src="img/a.jpg"><img height=600 src="img/b.jpg">\n'
+          '［＃改ページ］\n'
+          'Decoration Disorder Disconnection\n'
+          '奈須きのこ\n'
+          '-------------------------------------------------------\n';
+      expect(
+        detect('e.txt', head),
+        const WorkMeta(
+          title: 'Decoration Disorder Disconnection',
+          author: '奈須きのこ',
+        ),
+      );
+    });
+
+    test('夜伽形式で作者が多すぎるときは最初の1人にする', () {
+      const head =
+          '<div class="info">\n'
+          '「合同の題名」\n'
+          '作者：主催者　参加者Ａ　参加者Ｂ　とても長い名前の参加者さんがここにいます\n'
+          '</div>\n';
+      expect(
+        detect('f.txt', head),
+        const WorkMeta(title: '合同の題名', author: '主催者'),
+      );
+    });
+  });
+
   group('ファイル名', () {
     test('作者_作品', () {
       expect(

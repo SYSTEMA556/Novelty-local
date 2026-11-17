@@ -113,4 +113,51 @@ void main() {
       expect(PlainTextNovelParser.parse(text), [PlainText(text)]);
     });
   });
+
+  group('HTML・青空文庫の注記を取り除く', () {
+    test('タグだけの行は消し、行の中のタグも消す', () {
+      const text = '<div class="info">\n本文<b>太字</b>です\n</div>\n次の行';
+      expect(PlainTextNovelParser.cleanMarkup(text), '本文太字です\n次の行');
+    });
+
+    test('br は改行に、文字参照は文字に戻す', () {
+      expect(
+        PlainTextNovelParser.cleanMarkup('一行目<br>二行目 &lt;3 &amp; &#x41;'),
+        '一行目\n二行目 <3 & A',
+      );
+    });
+
+    test('元からある空行は残す', () {
+      expect(PlainTextNovelParser.cleanMarkup('あ\n\nい'), 'あ\n\nい');
+    });
+
+    test('青空文庫の注記と冒頭の記号の説明を消す', () {
+      const text =
+          '題名\n作者\n'
+          '-------------------------------------------------------\n'
+          '【テキスト中に現れる記号について】\n'
+          '《》：ルビ\n'
+          '-------------------------------------------------------\n'
+          '本文［＃「本文」に傍点］です\n'
+          '［＃改ページ］\n'
+          '続き';
+      expect(
+        PlainTextNovelParser.cleanMarkup(text),
+        '題名\n作者\n本文です\n続き',
+      );
+    });
+
+    test('記号の説明でない区切り線は残す', () {
+      const text = 'あ\n----------\nい\n----------\nう';
+      expect(PlainTextNovelParser.cleanMarkup(text), text);
+    });
+
+    test('不等号だけの文はタグとみなさない', () {
+      expect(PlainTextNovelParser.cleanMarkup('1 < 2 > 0'), '1 < 2 > 0');
+    });
+
+    test('解析の前に取り除く', () {
+      expect(PlainTextNovelParser.parse('<p>本文</p>'), [PlainText('本文')]);
+    });
+  });
 }

@@ -224,17 +224,27 @@ class LocalTextReaderPage extends HookConsumerWidget {
               child: Column(
                 children: [
                   Expanded(child: body),
-                  ReaderPositionBar(
-                    navigation: navigation,
-                    isVertical: isVertical,
-                    isPageFlip: settingsValue?.isPageFlip ?? false,
-                    textColor: settingsValue?.colorTheme.text,
-                  ),
+                  const SizedBox(height: ReaderPositionBar.height),
                 ],
               ),
             ),
             // 縦書きモード時、ホームジェスチャーとの競合を防ぐ
             if (isVertical) const GestureShield(),
+            // シークバーはシールドより上に置く（下に置くと指で動かせない）
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: SafeArea(
+                top: false,
+                child: ReaderPositionBar(
+                  navigation: navigation,
+                  isVertical: isVertical,
+                  isPageFlip: settingsValue?.isPageFlip ?? false,
+                  textColor: settingsValue?.colorTheme.text,
+                ),
+              ),
+            ),
             // 読み上げ中（一時停止中を含む）は操作ボタンを出す
             if (readAloud.isActive)
               Positioned(

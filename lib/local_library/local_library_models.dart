@@ -35,7 +35,8 @@ class LocalWork {
   /// 作品情報（作者など）の読み取り規則の版。
   ///
   /// 規則を改良したら上げる。これより古い作品は読み込み時に読み取り直す。
-  static const int currentMetaVersion = 1;
+  // 2: 行の中の HTML タグ・青空文庫の注記を除いてから読み取る
+  static const int currentMetaVersion = 2;
 
   /// 作品ID（ファイル名から算出する固定長の識別子）。
   final String id;

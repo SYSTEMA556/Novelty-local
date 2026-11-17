@@ -73,9 +73,90 @@ class PlainTextNovelParser {
     return String.fromCharCodes(units);
   }
 
+  static final _htmlComment = RegExp(r'<!--[\s\S]*?-->');
+  static final _htmlBreak = RegExp(r'<br\s*/?>', caseSensitive: false);
+  static final _htmlTag = RegExp(r'</?[a-zA-Z][a-zA-Z0-9]*(?:\s[^<>]*)?/?>');
+  static final _htmlDeclaration = RegExp('<![^<>]*>');
+  static final _aozoraNote = RegExp('［＃[^］\n]*］');
+  static final _separator = RegExp(r'^\s*[-－―─]{10,}\s*$');
+  static final _numericEntity = RegExp('&#([xX]?)([0-9a-fA-F]+);');
+  static const _namedEntities = {
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&apos;': "'",
+    '&nbsp;': ' ',
+    '&amp;': '&',
+  };
+
+  /// 青空文庫の「テキスト中に現れる記号について」の説明の見出し。
+  static const aozoraNoticeHeading = '【テキスト中に現れる記号について】';
+
+  /// 本文に混ざった HTML のタグや青空文庫の注記を取り除く。
+  ///
+  /// - HTML のタグ・コメントは消し、`<br>` は改行にする。`&amp;` などは文字に戻す
+  /// - 青空文庫の注記（`［＃改ページ］` など）と、冒頭の記号の説明は消す
+  /// - タグや注記だけでできていた行は、行ごと消す
+  static String cleanMarkup(String text) {
+    final normalized = text
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll(_htmlComment, '')
+        .replaceAll(_htmlBreak, '\n');
+    final lines = _removeAozoraNotice(normalized.split('\n'));
+    final out = <String>[];
+    for (final line in lines) {
+      final cleaned = cleanLine(line);
+      if (cleaned.trim().isEmpty && line.trim().isNotEmpty) continue;
+      out.add(cleaned);
+    }
+    return out.join('\n');
+  }
+
+  /// 1行から HTML のタグと青空文庫の注記を取り除く。
+  static String cleanLine(String line) {
+    final stripped = line
+        .replaceAll(_htmlTag, '')
+        .replaceAll(_htmlDeclaration, '')
+        .replaceAll(_aozoraNote, '');
+    if (!stripped.contains('&')) return stripped;
+    final named = _namedEntities.entries.fold(
+      stripped,
+      (text, entry) => text.replaceAll(entry.key, entry.value),
+    );
+    return named.replaceAllMapped(_numericEntity, (match) {
+      final code = int.tryParse(
+        match.group(2)!,
+        radix: match.group(1)!.isEmpty ? 10 : 16,
+      );
+      if (code == null || code <= 0 || code > 0x10FFFF) return match.group(0)!;
+      return String.fromCharCode(code);
+    });
+  }
+
+  // 冒頭の区切り線で挟まれた「記号について」の説明を取り除く
+  static List<String> _removeAozoraNotice(List<String> lines) {
+    final searchEnd = lines.length < 80 ? lines.length : 80;
+    for (var start = 0; start < searchEnd; start++) {
+      if (!_separator.hasMatch(lines[start])) continue;
+      final limit = start + 60 < lines.length ? start + 60 : lines.length;
+      for (var end = start + 1; end < limit; end++) {
+        if (!_separator.hasMatch(lines[end])) continue;
+        final block = lines.sublist(start, end);
+        if (block.any((line) => line.contains(aozoraNoticeHeading))) {
+          return [...lines.sublist(0, start), ...lines.sublist(end + 1)];
+        }
+        break;
+      }
+    }
+    return lines;
+  }
+
   /// テキストを本文要素のリストに変換する。
+  ///
+  /// 先に [cleanMarkup] で HTML のタグや青空文庫の注記を取り除く。
   static List<NovelContentElement> parse(String text) {
-    final normalized = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final normalized = cleanMarkup(text);
     final lines = normalized.split('\n');
     // 末尾の改行による空行は表示しない
     while (lines.isNotEmpty && lines.last.isEmpty) {
