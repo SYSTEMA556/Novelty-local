@@ -677,11 +677,14 @@ class _VoicePickerState extends State<_VoicePicker> {
         return Column(
           children: [
             if (voicevox)
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
                 child: Text(
-                  'VOICEVOX の声は端末の中で声を作ります。初めて使うときは'
-                  '準備に数十秒かかり、読み始めにも少し時間がかかります。',
+                  [
+                    'VOICEVOX の声は端末の中で声を作ります。',
+                    '初めて使うときは準備に数十秒かかり、',
+                    '読み始めにも少し時間がかかります。',
+                  ].join(),
                 ),
               ),
             _dropdown(

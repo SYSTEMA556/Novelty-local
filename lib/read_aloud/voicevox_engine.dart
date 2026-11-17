@@ -359,14 +359,18 @@ void registerVoicevoxLicenses() {
     () => Stream.fromIterable([
       LicenseEntryWithLineBreaks(
         ['VOICEVOX（読み上げの声）'],
-        '読み上げの声に VOICEVOX を使っています。\n'
-        '${voicevoxCharacters.map((c) => c.credit).join('\n')}\n\n'
-        'VOICEVOX 音声モデル・VOICEVOX ONNX Runtime 利用規約より：'
-        '商用・非商用問わず利用でき、アプリケーションに組み込んで再配布できます。'
-        '作成された音声を利用する際は各音声ライブラリの規約に従ってください。'
-        '利用の際は VOICEVOX を利用したことがわかるクレジット表記が必要です。\n'
-        '四国めたんの音声ライブラリの規約：https://zunko.jp/con_ongen_kiyaku.html\n'
-        'https://voicevox.hiroshiba.jp/',
+        [
+          '読み上げの声に VOICEVOX を使っています。',
+          ...voicevoxCharacters.map((c) => c.credit),
+          '',
+          'VOICEVOX 音声モデル・VOICEVOX ONNX Runtime 利用規約より：',
+          '商用・非商用問わず利用でき、アプリケーションに組み込んで再配布できます。',
+          '作成された音声を利用する際は各音声ライブラリの規約に従ってください。',
+          '利用の際は VOICEVOX を利用したことがわかるクレジット表記が必要です。',
+          '四国めたんの音声ライブラリの規約：',
+          'https://zunko.jp/con_ongen_kiyaku.html',
+          'https://voicevox.hiroshiba.jp/',
+        ].join('\n'),
       ),
       const LicenseEntryWithLineBreaks(
         ['VOICEVOX CORE'],
@@ -382,10 +386,13 @@ void registerVoicevoxLicenses() {
         'portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", '
         'WITHOUT WARRANTY OF ANY KIND.',
       ),
-      const LicenseEntryWithLineBreaks(
+      LicenseEntryWithLineBreaks(
         ['Open JTalk / open_jtalk_dic'],
-        'Open JTalk の辞書（mecab-naist-jdic を基にしたもの）を使っています。'
-        '修正 BSD ライセンス。\nhttps://open-jtalk.sourceforge.net/',
+        [
+          'Open JTalk の辞書（mecab-naist-jdic を基にしたもの）を使っています。',
+          '修正 BSD ライセンス。',
+          'https://open-jtalk.sourceforge.net/',
+        ].join('\n'),
       ),
     ]),
   );
