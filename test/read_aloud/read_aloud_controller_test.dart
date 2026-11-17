@@ -38,6 +38,7 @@ class FakeEngine implements SpeechEngine {
     SpeechProsody prosody, {
     String? voice,
     SpeechDirection? direction,
+    int ahead = 1,
   }) async {
     prefetched.add(text);
   }
@@ -233,6 +234,20 @@ void main() {
     unawaited(c.playFrom(0));
     await pumpEventQueue();
     expect(e.prefetched, ['二つ目。']);
+    c.dispose();
+  });
+
+  test('全力のときは何文か先まで先読みさせる', () async {
+    final e = FakeEngine();
+    final c = ReadAloudController(
+      document: SpeechDocument.fromElements([
+        PlainText('一つ目。二つ目。三つ目。四つ目。'),
+      ]),
+      engine: e,
+    )..setVoice(rate: 0.5, pitch: 1, prefetchAhead: 5);
+    unawaited(c.playFrom(0));
+    await pumpEventQueue();
+    expect(e.prefetched, ['二つ目。', '三つ目。', '四つ目。']);
     c.dispose();
   });
 }

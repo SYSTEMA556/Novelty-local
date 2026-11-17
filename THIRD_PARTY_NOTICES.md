@@ -8,8 +8,11 @@ Novelty 本体のライセンスは [LICENSE](LICENSE)（PolyForm Noncommercial 
 読み上げの声に VOICEVOX を使用しています。
 
 - **VOICEVOX:四国めたん**
+- **VOICEVOX:ずんだもん**
+- **VOICEVOX:九州そら**
+- **VOICEVOX:東北きりたん**
 
-アプリ内では、閲覧設定の声の選択肢（「VOICEVOX:四国めたん」）と、
+アプリ内では、閲覧設定の声の選択肢（「VOICEVOX:四国めたん」など）と、
 「ライセンス」画面にも表記しています。
 
 ## リポジトリと APK の関係
@@ -22,14 +25,17 @@ APK に同梱します。同梱しているものは次のとおりです。
 |---|---|---|---|
 | VOICEVOX CORE（Android 版） | 0.17.1 | [VOICEVOX/voicevox_core](https://github.com/VOICEVOX/voicevox_core) | MIT License |
 | VOICEVOX ONNX Runtime（android-arm64） | 1.23.2 | [VOICEVOX/onnxruntime-builder](https://github.com/VOICEVOX/onnxruntime-builder) | VOICEVOX ONNX Runtime 利用規約（ONNX Runtime は MIT License） |
-| VOICEVOX 音声モデル（0.vvm・5.vvm：四国めたん） | 0.17.1 | [VOICEVOX/voicevox_vvm](https://github.com/VOICEVOX/voicevox_vvm) | VOICEVOX 音声モデル利用規約・四国めたんの音声ライブラリ規約 |
+| VOICEVOX 音声モデル（0.vvm・2.vvm・5.vvm・15.vvm・21.vvm） | 0.17.1 | [VOICEVOX/voicevox_vvm](https://github.com/VOICEVOX/voicevox_vvm) | VOICEVOX 音声モデル利用規約・各音声ライブラリの規約 |
 | Open JTalk 辞書（open_jtalk_dic_utf_8-1.11） | 1.11 | [r9y9/open_jtalk](https://github.com/r9y9/open_jtalk) | 修正 BSD ライセンス |
 
 各規約は、次の点を満たして利用しています。
 
 - 「アプリケーションに組み込んで再配布することができます」（音声モデル・ONNX Runtime 利用規約）
 - 「VOICEVOX を利用したことがわかるクレジット表記」（上記のクレジット）
-- 作成した音声の利用は、各音声ライブラリの規約に従う（四国めたん：<https://zunko.jp/con_ongen_kiyaku.html>）
+- 作成した音声の利用は、各音声ライブラリの規約に従う（四国めたん・ずんだもん・九州そら・東北きりたん：<https://zunko.jp/con_ongen_kiyaku.html>）
+
+同梱のモデルには、上の4人のほかに同じファイルに入っている声（春日部つむぎ・雨晴はう・青山龍星・もち子さん・
+小夜/SAYO・猫使アル・猫使ビィ・東北ずん子・東北イタコ）も含まれますが、アプリでは選べるようにしていません。
 
 ---
 
@@ -64,6 +70,30 @@ APK に同梱します。同梱しているものは次のとおりです。
 
 四国めたんの音声ライブラリを用いて生成した音声は、
 「VOICEVOX:四国めたん」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://zunko.jp/con_ongen_kiyaku.html
+
+#### ずんだもん
+
+ずんだもんの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:ずんだもん」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://zunko.jp/con_ongen_kiyaku.html
+
+#### 九州そら
+
+九州そらの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:九州そら」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://zunko.jp/con_ongen_kiyaku.html
+
+#### 東北きりたん
+
+東北きりたんの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:東北きりたん」とクレジットを記載すれば、商用・非商用で利用可能です。
 
 利用規約の詳細は以下をご確認ください。
 https://zunko.jp/con_ongen_kiyaku.html

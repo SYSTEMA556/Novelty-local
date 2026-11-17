@@ -4,7 +4,7 @@
 > **このリポジトリは [L4Ph/Novelty](https://github.com/L4Ph/Novelty) の個人用フォーク「Novelty-local」です。**
 > 端末内のテキストファイルを読むローカル本棚・読み上げ・しおりなどを足しています。
 > 何を変えたか・使い方・しくみは [docs/novelty-local/README.md](docs/novelty-local/README.md) を見てください。
-> 読み上げの声に **VOICEVOX:四国めたん** を使用しています。
+> 読み上げの声に **VOICEVOX:四国めたん・ずんだもん・九州そら・東北きりたん** を使用しています。
 > 同梱している外部のソフトウェア・データのライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を見てください。
 
 # Novelty

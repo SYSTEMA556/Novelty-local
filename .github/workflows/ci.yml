@@ -94,7 +94,8 @@ jobs:
           storeFile=ci-keystore.jks
           PROPS
 
-      # VOICEVOX（四国めたんの声）の公式の配布物を取得して APK に同梱する。
+      # VOICEVOX（四国めたん・ずんだもん・九州そら・東北きりたん）の公式の配布物を
+      # 取得して APK に同梱する。
       # 声のモデル・ONNX Runtime とも、利用規約で「アプリケーションに組み込んで
       # 再配布することができます」とされている（クレジット表記が必要）。
       - name: Fetch VOICEVOX
@@ -127,8 +128,11 @@ jobs:
           mkdir -p android/app/src/main/assets/voicevox
           (cd "$work" && zip -q -r open_jtalk_dic.zip open_jtalk_dic_utf_8-1.11)
           mv "$work/open_jtalk_dic.zip" android/app/src/main/assets/voicevox/
-          # 声のモデル（0.vvm: めたん基本／5.vvm: めたんのささやき・ヒソヒソ）
-          for m in 0.vvm 5.vvm TERMS.txt; do
+          # 声のモデル
+          #   0.vvm: 四国めたん・ずんだもん　2.vvm: 九州そら
+          #   5.vvm: 3人のささやき・ヒソヒソ　15.vvm: ずんだもんのなみだめ等
+          #   21.vvm: 東北きりたん
+          for m in 0.vvm 2.vvm 5.vvm 15.vvm 21.vvm TERMS.txt; do
             gh release download "$VVM_VERSION" -R VOICEVOX/voicevox_vvm \
               -p "$m" -D android/app/src/main/assets/voicevox
           done

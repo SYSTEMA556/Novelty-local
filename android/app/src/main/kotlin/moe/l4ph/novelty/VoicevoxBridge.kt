@@ -1,10 +1,14 @@
 package moe.l4ph.novelty
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.util.Log
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
@@ -45,6 +49,25 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     @Volatile private var synthesizer: Synthesizer? = null
     private var prepareFuture: Future<*>? = null
 
+    // 作り直しに使う部品（使うスレッド数を変えるときに作り直す）
+    private var onnxruntime: Onnxruntime? = null
+    private var openJtalk: OpenJtalk? = null
+    private var builtThreads = 0
+
+    // 声の種類の番号 → その声が入っているモデルのファイル
+    private val modelOfStyle = HashMap<Int, String>()
+
+    // 読み込み済みのモデル（ファイル → ID）。使う声のモデルだけ読み込んでメモリを節約する
+    private val loadedModels = LinkedHashMap<String, java.util.UUID>()
+
+    /**
+     * パフォーマンスモード。
+     * 0: 標準（4コアまで使い、先読みは1文、モデルは使うものだけ読み込む）
+     * 1: 全力（全コア・優先度高め・5文先まで作り溜め・全モデルを読み込んでおく）
+     * 2: 充電中だけ全力
+     */
+    @Volatile private var performanceMode = 0
+
     // 作った声（または作っている途中）を、文と声の設定ごとに少しだけ残す
     private val cache = object : LinkedHashMap<String, Future<File>>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Future<File>>): Boolean {
@@ -67,13 +90,22 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             "prepare" -> waitInBackground(result) { ensurePrepared(); true }
             "synthesize" -> {
                 val request = SynthesisRequest.from(call)
-                waitInBackground(result) { synthesize(request).get().absolutePath }
+                waitInBackground(result) { synthesize(request, now = true).get().absolutePath }
             }
             "prefetch" -> {
                 val request = SynthesisRequest.from(call)
-                // 準備が済んでいるときだけ先に作っておく（結果は待たない）
-                if (synthesizer != null) synthesize(request)
+                val ahead = call.argument<Int>("ahead") ?: 1
+                // 準備が済んでいて、今のモードで作り溜める範囲のときだけ先に作る（待たない）
+                if (synthesizer != null && ahead <= prefetchDepth()) {
+                    synthesize(request, now = false)
+                }
                 result.success(null)
+            }
+            "configure" -> {
+                performanceMode = call.argument<Int>("performance") ?: 0
+                // 準備済みなら、スレッド数の変更や全モデルの読み込みを裏で行う
+                if (synthesizer != null) synthesisThread.submit { applyPerformance() }
+                result.success(mapOf("fullPower" to isFullPower()))
             }
             "play" -> play(call.argument<String>("path")!!, result)
             "stop" -> {
@@ -136,22 +168,110 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         val dictPath = dictDir.listFiles()?.firstOrNull { it.isDirectory }?.absolutePath
             ?: dictDir.absolutePath
 
-        val ort = step("ONNX Runtime の読み込み") { Onnxruntime.loadOnce().perform() }
-        val openJtalk = step("辞書の読み込み（$dictPath）") { OpenJtalk(dictPath) }
-        val synth = step("音声合成の準備") {
-            Synthesizer.builder(ort, openJtalk)
-                .cpuNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(1, 8))
-                .build()
-        }
+        onnxruntime = step("ONNX Runtime の読み込み") { Onnxruntime.loadOnce().perform() }
+        openJtalk = step("辞書の読み込み（$dictPath）") { OpenJtalk(dictPath) }
+        // どの声がどのモデルに入っているかだけ先に調べる（読み込みは使うときに行う）
         for (file in modelFiles) {
-            step("声のモデルの読み込み（${file.name}）") {
+            step("声のモデルの確認（${file.name}）") {
                 VoiceModelFile(file.absolutePath).use { model ->
-                    synth.loadVoiceModel(model).perform()
+                    for (character in model.metas) {
+                        for (style in character.styles) {
+                            modelOfStyle[style.id] = file.absolutePath
+                        }
+                    }
                 }
             }
         }
-        synthesizer = synth
+        step("音声合成の準備") { build(desiredThreads()) }
+        if (isFullPower()) loadAllModels()
         Log.i(TAG, "VOICEVOX ready")
+    }
+
+    // 指定したスレッド数でコアを作り、読み込み済みだったモデルを読み込み直す
+    private fun build(threads: Int) {
+        val synth = Synthesizer.builder(onnxruntime!!, openJtalk!!)
+            .cpuNumThreads(threads)
+            .build()
+        val paths = loadedModels.keys.toList()
+        loadedModels.clear()
+        synthesizer = synth
+        builtThreads = threads
+        for (path in paths) loadModel(path)
+        Log.i(TAG, "VOICEVOX built with $threads threads")
+    }
+
+    private fun loadModel(path: String) {
+        if (loadedModels.containsKey(path)) return
+        val synth = synthesizer ?: return
+        step("声のモデルの読み込み（${File(path).name}）") {
+            VoiceModelFile(path).use { model ->
+                synth.loadVoiceModel(model).perform()
+                loadedModels[path] = model.id
+            }
+        }
+    }
+
+    private fun loadAllModels() {
+        for (path in modelOfStyle.values.toSet()) loadModel(path)
+    }
+
+    // 声の種類に必要なモデルを読み込む（標準では、使わない声のモデルは外してメモリを空ける）
+    private fun ensureModelFor(styleId: Int) {
+        val path = modelOfStyle[styleId]
+            ?: throw IllegalArgumentException("声の種類 $styleId が見つかりません")
+        if (loadedModels.containsKey(path)) {
+            // 最近使った順に並べ直す
+            loadedModels[path]?.let { loadedModels.remove(path); loadedModels[path] = it }
+            return
+        }
+        if (!isFullPower()) {
+            while (loadedModels.size >= MAX_LOADED_MODELS_STANDARD) {
+                val (oldPath, oldId) = loadedModels.entries.first().toPair()
+                runCatching { synthesizer?.unloadVoiceModel(oldId) }
+                loadedModels.remove(oldPath)
+            }
+        }
+        loadModel(path)
+    }
+
+    // ---- パフォーマンスモード ----
+
+    private fun isCharging(): Boolean = runCatching {
+        val status = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            ?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+        status == BatteryManager.BATTERY_STATUS_CHARGING ||
+            status == BatteryManager.BATTERY_STATUS_FULL
+    }.getOrDefault(false)
+
+    private fun isFullPower(): Boolean =
+        performanceMode == 1 || (performanceMode == 2 && isCharging())
+
+    private fun prefetchDepth(): Int = if (isFullPower()) PREFETCH_FULL else 1
+
+    // 標準は4コアまで（熱と電池を抑える）、全力は全コア
+    private fun desiredThreads(): Int {
+        val cores = Runtime.getRuntime().availableProcessors().coerceIn(1, 16)
+        return if (isFullPower()) cores else cores.coerceAtMost(4)
+    }
+
+    // 合成スレッドで呼ぶ：スレッド数が変わっていれば作り直し、全力なら全モデルを読み込む
+    private fun applyPerformance() {
+        if (synthesizer == null) return
+        runCatching {
+            val threads = desiredThreads()
+            if (threads != builtThreads) build(threads)
+            if (isFullPower()) loadAllModels()
+        }.onFailure { Log.w(TAG, "performance change failed", it) }
+    }
+
+    // 声を作るスレッドの優先度（全力のときは音声処理並みに上げる）
+    private fun applyThreadPriority() {
+        val priority = if (isFullPower()) {
+            Process.THREAD_PRIORITY_AUDIO
+        } else {
+            Process.THREAD_PRIORITY_DEFAULT
+        }
+        runCatching { Process.setThreadPriority(priority) }
     }
 
     // どの段階で失敗したかが分かるよう、段階の名前を付けて投げ直す
@@ -217,10 +337,24 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         }
     }
 
-    private fun synthesize(request: SynthesisRequest): Future<File> = synchronized(cache) {
+    /**
+     * 声を作る（同じ文・同じ設定なら、できているもの・作っている途中のものを使う）。
+     *
+     * [now] は「今すぐ読む文」。作り溜めに無かったとき（読み始め・移動した直後）は、
+     * 並んでいるだけの古い先読みを取り消して、この文を先に作る。
+     */
+    private fun synthesize(request: SynthesisRequest, now: Boolean): Future<File> = synchronized(cache) {
         cache[request.key]?.let { return it }
+        if (now) {
+            val stale = cache.entries.filter { !it.value.isDone }.map { it.key }
+            for (key in stale) {
+                cache.remove(key)?.cancel(false)
+            }
+        }
         val future = synthesisThread.submit<File> {
             ensurePreparedOnSynthesisThread()
+            applyThreadPriority()
+            ensureModelFor(request.styleId)
             val synth = synthesizer ?: throw IllegalStateException("VOICEVOX is not ready")
             val query = step("読みの解析") {
                 synth.createAudioQuery(request.text, request.styleId)
@@ -297,6 +431,9 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             try {
                 val value = block()
                 main.post { result.success(value) }
+            } catch (e: java.util.concurrent.CancellationException) {
+                // 移動・停止で取り消された先読み。失敗ではないので null を返す
+                main.post { result.success(null) }
             } catch (e: Throwable) {
                 val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
                 Log.w(TAG, "VOICEVOX failed", cause)
@@ -314,10 +451,17 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         const val CHANNEL = "novelty/voicevox"
         private const val ASSET_DIR = "voicevox"
         private const val DICT_ZIP = "open_jtalk_dic.zip"
-        private const val CACHE_SIZE = 6
+        private const val CACHE_SIZE = 10
+        private const val PREFETCH_FULL = 5
 
-        // 0.vvm: 四国めたん（ノーマル・あまあま・ツンツン・セクシー）
-        // 5.vvm: 四国めたん（ささやき・ヒソヒソ）
-        private val MODEL_FILES = listOf("0.vvm", "5.vvm")
+        // 標準モードで同時に読み込んでおくモデルの数（メモリを抑える）
+        private const val MAX_LOADED_MODELS_STANDARD = 3
+
+        // 0.vvm: 四国めたん・ずんだもん（ノーマル・あまあま・ツンツン・セクシー）
+        // 2.vvm: 九州そら（ノーマル・あまあま・ツンツン・セクシー）
+        // 5.vvm: 四国めたん・ずんだもん・九州そら（ささやき・ヒソヒソ）
+        // 15.vvm: ずんだもん（ヘロヘロ・なみだめ）
+        // 21.vvm: 東北きりたん（ノーマル）
+        private val MODEL_FILES = listOf("0.vvm", "2.vvm", "5.vvm", "15.vvm", "21.vvm")
     }
 }

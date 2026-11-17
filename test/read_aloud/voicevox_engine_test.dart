@@ -35,6 +35,26 @@ void main() {
     });
   });
 
+  test('ずんだもんの悲しみはなみだめ、きりたんは常にノーマル', () {
+    final zundamon = voicevoxCharacterOf('voicevox:zundamon')!;
+    const sad = SpeechDirection(
+      role: SpeechRole.dialogue,
+      emotion: SpeechEmotion.sadness,
+      intensity: 1,
+    );
+    expect(zundamon.styleFor(sad), 76);
+    final kiritan = voicevoxCharacterOf('voicevox:kiritan')!;
+    expect(kiritan.styleFor(sad), 108);
+    expect(kiritan.credit, 'VOICEVOX:東北きりたん');
+  });
+
+  test('4人の声を同梱している', () {
+    expect(
+      voicevoxCharacters.map((c) => c.name),
+      ['四国めたん', 'ずんだもん', '九州そら', '東北きりたん'],
+    );
+  });
+
   test('声の設定の名前からキャラクターを引ける', () {
     expect(voicevoxCharacterOf('voicevox:metan')?.name, '四国めたん');
     expect(voicevoxCharacterOf('ja-jp-x-htm-local'), isNull);

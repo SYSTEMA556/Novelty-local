@@ -20,6 +20,7 @@ class VoicevoxCharacter {
     this.tsuntsun,
     this.sasayaki,
     this.hisohiso,
+    this.namidame,
   });
 
   /// 設定に保存する名前（voicevox: の後ろ）。
@@ -43,6 +44,9 @@ class VoicevoxCharacter {
   /// ヒソヒソ（心の声に使う）。
   final int? hisohiso;
 
+  /// なみだめ（悲しみに使う）。
+  final int? namidame;
+
   /// 声の設定に入れる値。
   String get voice => '$voicevoxVoicePrefix$id';
 
@@ -59,6 +63,7 @@ class VoicevoxCharacter {
           SpeechEmotion.whisper => sasayaki,
           SpeechEmotion.joy => amaama,
           SpeechEmotion.anger || SpeechEmotion.shout => tsuntsun,
+          SpeechEmotion.sadness => namidame,
           _ => null,
         } ??
         normal;
@@ -67,7 +72,8 @@ class VoicevoxCharacter {
 
 /// このアプリに同梱している VOICEVOX の声。
 ///
-/// 番号は公式の音声モデル（0.vvm・5.vvm）の中身で確かめたもの。
+/// 番号は公式の音声モデル（0.vvm・2.vvm・5.vvm・15.vvm・21.vvm）の中身で
+/// 確かめたもの。
 const voicevoxCharacters = [
   VoicevoxCharacter(
     id: 'metan',
@@ -78,6 +84,26 @@ const voicevoxCharacters = [
     sasayaki: 36,
     hisohiso: 37,
   ),
+  VoicevoxCharacter(
+    id: 'zundamon',
+    name: 'ずんだもん',
+    normal: 3,
+    amaama: 1,
+    tsuntsun: 7,
+    sasayaki: 22,
+    hisohiso: 38,
+    namidame: 76,
+  ),
+  VoicevoxCharacter(
+    id: 'sora',
+    name: '九州そら',
+    normal: 16,
+    amaama: 15,
+    tsuntsun: 18,
+    sasayaki: 19,
+  ),
+  // 東北きりたんは今のところノーマルだけ（高さ・速さ・抑揚・間で演じる）
+  VoicevoxCharacter(id: 'kiritan', name: '東北きりたん', normal: 108),
 ];
 
 /// [voice] が VOICEVOX の声なら、そのキャラクター（違えば null）。
@@ -177,13 +203,30 @@ class VoicevoxBridge {
   /// 声の部品を展開して読み込む（初回は時間がかかる）。
   static Future<void> prepare() => _channel.invokeMethod<void>('prepare');
 
-  /// 声を作り、WAV ファイルの場所を返す。
-  static Future<String> synthesize(VoicevoxRequest request) async =>
-      (await _channel.invokeMethod<String>('synthesize', request.toMap()))!;
+  /// 声を作り、WAV ファイルの場所を返す（取り消されたら null）。
+  static Future<String?> synthesize(VoicevoxRequest request) =>
+      _channel.invokeMethod<String>('synthesize', request.toMap());
 
-  /// 次に読む文の声を先に作っておく（待たない）。
-  static Future<void> prefetch(VoicevoxRequest request) =>
-      _channel.invokeMethod<void>('prefetch', request.toMap());
+  /// [ahead] 文先の声を先に作っておく（待たない）。
+  ///
+  /// どこまで先を作るかは、パフォーマンスモードに合わせて Android 側が決める。
+  static Future<void> prefetch(VoicevoxRequest request, {int ahead = 1}) =>
+      _channel.invokeMethod<void>('prefetch', {
+        ...request.toMap(),
+        'ahead': ahead,
+      });
+
+  /// パフォーマンスモードを伝える（0: 標準、1: 全力、2: 充電中だけ全力）。
+  static Future<void> configure({required int performance}) async {
+    if (!await isAvailable()) return;
+    try {
+      await _channel.invokeMethod<void>('configure', {
+        'performance': performance,
+      });
+    } on Object catch (e) {
+      debugPrint('VOICEVOX の設定を変えられませんでした: $e');
+    }
+  }
 
   /// WAV を鳴らし、鳴り終わる（または止められる）まで待つ。
   static Future<void> play(String path) =>
@@ -277,10 +320,12 @@ class VoicevoxEngine implements SpeechEngine {
     SpeechProsody prosody, {
     String? voice,
     SpeechDirection? direction,
+    int ahead = 1,
   }) async {
     try {
       await VoicevoxBridge.prefetch(
         VoicevoxRequest.of(text, prosody, _characterOf(voice), direction),
+        ahead: ahead,
       );
     } on Object catch (e) {
       debugPrint('VOICEVOX の先読みに失敗しました: $e');
@@ -292,7 +337,7 @@ class VoicevoxEngine implements SpeechEngine {
     final base = _next;
     if (base == null) return;
     await ensurePrepared();
-    final String path;
+    final String? path;
     try {
       path = await VoicevoxBridge.synthesize(
         VoicevoxRequest(
@@ -308,8 +353,8 @@ class VoicevoxEngine implements SpeechEngine {
       lastError.value = describeVoicevoxError(e);
       rethrow;
     }
-    // 声を作っている間に止められていたら鳴らさない
-    if (_stopped) return;
+    // 声を作っている間に止められた・取り消されたら鳴らさない
+    if (_stopped || path == null) return;
     await VoicevoxBridge.play(path);
   }
 
@@ -380,6 +425,7 @@ class CompositeSpeechEngine implements SpeechEngine {
     SpeechProsody prosody, {
     String? voice,
     SpeechDirection? direction,
+    int ahead = 1,
   }) async {
     if (await _useVoicevox(voice)) {
       await _voicevox.prefetch(
@@ -387,6 +433,7 @@ class CompositeSpeechEngine implements SpeechEngine {
         prosody,
         voice: voice,
         direction: direction,
+        ahead: ahead,
       );
     }
   }
@@ -437,7 +484,7 @@ void registerVoicevoxLicenses() {
           '商用・非商用問わず利用でき、アプリケーションに組み込んで再配布できます。',
           '作成された音声を利用する際は各音声ライブラリの規約に従ってください。',
           '利用の際は VOICEVOX を利用したことがわかるクレジット表記が必要です。',
-          '四国めたんの音声ライブラリの規約：',
+          '四国めたん・ずんだもん・九州そら・東北きりたんの音声ライブラリの規約：',
           'https://zunko.jp/con_ongen_kiyaku.html',
           'https://voicevox.hiroshiba.jp/',
         ].join('\n'),

@@ -24,6 +24,7 @@ class AppSettings {
     this.ttsActing = 60,
     this.ttsNarrationVoice = '',
     this.ttsDialogueVoice = '',
+    this.ttsPerformance = 0,
     this.colorTheme = ReaderColorTheme.system,
     this.tapZoneEnabled = false,
     this.tapZoneLayout = TapZoneLayout.sides,
@@ -88,6 +89,9 @@ class AppSettings {
   /// 台詞・心の声を読む声の名前（空なら地の文と同じ声）。
   final String ttsDialogueVoice;
 
+  /// 読み上げのパフォーマンスモード（0: 標準、1: 全力、2: 充電中だけ全力）。
+  final int ttsPerformance;
+
   /// 本文の色調。
   final ReaderColorTheme colorTheme;
 
@@ -147,6 +151,7 @@ class AppSettings {
     int? ttsActing,
     String? ttsNarrationVoice,
     String? ttsDialogueVoice,
+    int? ttsPerformance,
     ReaderColorTheme? colorTheme,
     bool? tapZoneEnabled,
     TapZoneLayout? tapZoneLayout,
@@ -174,6 +179,7 @@ class AppSettings {
       ttsActing: ttsActing ?? this.ttsActing,
       ttsNarrationVoice: ttsNarrationVoice ?? this.ttsNarrationVoice,
       ttsDialogueVoice: ttsDialogueVoice ?? this.ttsDialogueVoice,
+      ttsPerformance: ttsPerformance ?? this.ttsPerformance,
       colorTheme: colorTheme ?? this.colorTheme,
       tapZoneEnabled: tapZoneEnabled ?? this.tapZoneEnabled,
       tapZoneLayout: tapZoneLayout ?? this.tapZoneLayout,
@@ -207,6 +213,7 @@ class Settings extends _$Settings {
   static const _ttsActingKey = 'tts_acting';
   static const _ttsNarrationVoiceKey = 'tts_narration_voice';
   static const _ttsDialogueVoiceKey = 'tts_dialogue_voice';
+  static const _ttsPerformanceKey = 'tts_performance';
   static const _colorThemeKey = 'reader_color_theme';
   static const _tapZoneEnabledKey = 'tap_zone_enabled';
   static const _tapZoneLayoutKey = 'tap_zone_layout';
@@ -262,6 +269,7 @@ class Settings extends _$Settings {
     final ttsNarrationVoice =
         await repo.getString(_ttsNarrationVoiceKey) ?? '';
     final ttsDialogueVoice = await repo.getString(_ttsDialogueVoiceKey) ?? '';
+    final ttsPerformance = await repo.getInt(_ttsPerformanceKey) ?? 0;
     final colorTheme = ReaderColorTheme.fromName(
       await repo.getString(_colorThemeKey),
     );
@@ -296,6 +304,7 @@ class Settings extends _$Settings {
       ttsActing: ttsActing,
       ttsNarrationVoice: ttsNarrationVoice,
       ttsDialogueVoice: ttsDialogueVoice,
+      ttsPerformance: ttsPerformance,
       colorTheme: colorTheme,
       tapZoneEnabled: tapZoneEnabled,
       tapZoneLayout: tapZoneLayout,
@@ -350,6 +359,13 @@ class Settings extends _$Settings {
       ttsNarrationVoice: narrationVoice,
       ttsDialogueVoice: dialogueVoice,
     ),
+  );
+
+  /// 読み上げのパフォーマンスモードを保存する。
+  Future<void> setTtsPerformance(int mode) => _save(
+    'tts performance',
+    (repo) => repo.setInt(_ttsPerformanceKey, mode),
+    (s) => s.copyWith(ttsPerformance: mode),
   );
 
   /// 本文の色調を設定する。

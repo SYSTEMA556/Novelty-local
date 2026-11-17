@@ -20,12 +20,13 @@ abstract class SpeechEngine {
     SpeechDirection? direction,
   });
 
-  /// 次に読む文の声を先に作っておく（作る必要のないエンジンでは何もしない）。
+  /// [ahead] 文先の声を先に作っておく（作る必要のないエンジンでは何もしない）。
   Future<void> prefetch(
     String text,
     SpeechProsody prosody, {
     String? voice,
     SpeechDirection? direction,
+    int ahead = 1,
   });
 
   /// [text] を読み上げ、読み終わる（または止められる）まで待つ。
@@ -129,6 +130,7 @@ class FlutterTtsEngine implements SpeechEngine {
     SpeechProsody prosody, {
     String? voice,
     SpeechDirection? direction,
+    int ahead = 1,
   }) async {}
 
   @override
@@ -212,6 +214,7 @@ class ReadAloudController extends ChangeNotifier {
   double _acting = 0;
   String? _narrationVoice;
   String? _dialogueVoice;
+  int _prefetchAhead = 1;
 
   /// 文ごとの演出（役割・感情・間）。初めて使うときに読み取る。
   late final List<SpeechDirection> directions = SpeechDirector.direct(
@@ -262,7 +265,9 @@ class ReadAloudController extends ChangeNotifier {
     double acting = 0,
     String? narrationVoice,
     String? dialogueVoice,
+    int prefetchAhead = 1,
   }) {
+    _prefetchAhead = prefetchAhead.clamp(1, 8);
     _rate = rate;
     _pitch = pitch;
     _acting = acting.clamp(0.0, 1.0);
@@ -341,9 +346,10 @@ class ReadAloudController extends ChangeNotifier {
           direction: _acting > 0 ? direction : null,
         );
         if (generation != _generation) return;
-        // 声を作るエンジンでは、読んでいる間に次の文の声を作っておく
-        final nextIndex = _index + 1;
-        if (nextIndex < document.segments.length) {
+        // 声を作るエンジンでは、読んでいる間に先の文の声を作っておく
+        for (var ahead = 1; ahead <= _prefetchAhead; ahead++) {
+          final nextIndex = _index + ahead;
+          if (nextIndex >= document.segments.length) break;
           final next = directions[nextIndex];
           unawaited(
             _engine.prefetch(
@@ -351,6 +357,7 @@ class ReadAloudController extends ChangeNotifier {
               _prosodyOf(next),
               voice: _voiceOf(next),
               direction: _acting > 0 ? next : null,
+              ahead: ahead,
             ),
           );
         }

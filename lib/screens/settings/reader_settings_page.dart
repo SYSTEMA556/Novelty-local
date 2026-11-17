@@ -392,6 +392,39 @@ class ReaderSettingsPage extends ConsumerWidget {
           onDialogueChanged: (name) => saveActing(dialogueVoice: name),
         ),
         _ActingPreview(settings: settings),
+        ListTile(
+          title: const Text('パフォーマンスモード（VOICEVOX）'),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('標準')),
+                  ButtonSegment(value: 1, label: Text('全力')),
+                  ButtonSegment(value: 2, label: Text('充電中だけ全力')),
+                ],
+                selected: {settings.ttsPerformance.clamp(0, 2)},
+                showSelectedIcon: false,
+                onSelectionChanged: (value) => unawaited(
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setTtsPerformance(value.first),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                [
+                  '標準：4コアまで使い、次の1文だけ先に声を作ります。',
+                  '使う声のモデルだけを読み込み、メモリを抑えます。',
+                  '全力：全コアを優先度高めで使い、5文先まで作り溜めます。',
+                  '全員の声を読み込んでおくため、メモリを多く使い、',
+                  '熱と電池の減りが増えます。',
+                ].join(),
+              ),
+            ],
+          ),
+        ),
         const _VoicevoxDiagnosis(),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
