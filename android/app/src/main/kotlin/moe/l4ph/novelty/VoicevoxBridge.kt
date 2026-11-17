@@ -233,7 +233,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 postPhonemeLength = 0.05
             }
             val wav = step("声の合成") { synth.synthesis(query, request.styleId).perform() }
-            File.createTempFile("vv", ".wav", context.cacheDir).apply { writeBytes(wav) }
+            File.createTempFile("voicevox_", ".wav", context.cacheDir).apply { writeBytes(wav) }
         }
         cache[request.key] = future
         future
