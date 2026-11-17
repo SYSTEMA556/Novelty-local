@@ -285,7 +285,7 @@ class SpeechDirector {
     return roles;
   }
 
-  static const _openings = {
+  static const Map<String, SpeechRole> _openings = {
     '「': SpeechRole.dialogue,
     '『': SpeechRole.dialogue,
     '（': SpeechRole.thought,
