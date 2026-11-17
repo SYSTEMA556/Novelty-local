@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:novelty/database/database.dart';
 import 'package:novelty/database/database_initialization.dart';
 import 'package:novelty/database/database_maintenance.dart';
+import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/router/router.dart';
 import 'package:novelty/screens/database_maintenance_screen.dart';
 import 'package:novelty/screens/migration_progress_splash.dart';
@@ -21,6 +22,7 @@ export 'package:novelty/database/database_initialization.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  registerReadingDictionaryLicense();
 
   runApp(
     const ProviderScope(

@@ -13,6 +13,7 @@ class LocalWork {
     this.author,
     this.metaVersion = currentMetaVersion,
     this.manualMeta = false,
+    this.titleReading,
   });
 
   /// JSONから生成する。
@@ -27,6 +28,7 @@ class LocalWork {
       // 作者機能より前に取り込んだ作品は 0（要読み取り）
       metaVersion: json['metaVersion'] as int? ?? 0,
       manualMeta: json['manualMeta'] as bool? ?? false,
+      titleReading: json['titleReading'] as String?,
     );
   }
 
@@ -59,6 +61,9 @@ class LocalWork {
   /// 作品名・作者を手で修正したか（再判定の対象外にする）。
   final bool manualMeta;
 
+  /// 作品名の読み仮名（手で入れたもの。未設定なら辞書から推測する）。
+  final String? titleReading;
+
   /// 作品名・作者を差し替えたコピーを返す。
   ///
   /// [manual] が true なら手修正として記録する。
@@ -75,6 +80,22 @@ class LocalWork {
       addedAt: addedAt,
       author: author,
       manualMeta: manual,
+      titleReading: titleReading,
+    );
+  }
+
+  /// 作品名の読み仮名を差し替えたコピーを返す（null で推測に戻す）。
+  LocalWork withTitleReading(String? reading) {
+    return LocalWork(
+      id: id,
+      title: title,
+      fileName: fileName,
+      charCount: charCount,
+      addedAt: addedAt,
+      author: author,
+      metaVersion: metaVersion,
+      manualMeta: manualMeta,
+      titleReading: reading,
     );
   }
 
@@ -88,6 +109,7 @@ class LocalWork {
     'author': author,
     'metaVersion': metaVersion,
     'manualMeta': manualMeta,
+    if (titleReading != null) 'titleReading': titleReading,
   };
 
   @override
@@ -101,7 +123,8 @@ class LocalWork {
           addedAt == other.addedAt &&
           author == other.author &&
           metaVersion == other.metaVersion &&
-          manualMeta == other.manualMeta;
+          manualMeta == other.manualMeta &&
+          titleReading == other.titleReading;
 
   @override
   int get hashCode => Object.hash(
@@ -113,6 +136,7 @@ class LocalWork {
     author,
     metaVersion,
     manualMeta,
+    titleReading,
   );
 }
 

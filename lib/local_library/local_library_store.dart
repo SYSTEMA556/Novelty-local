@@ -135,16 +135,20 @@ class LocalLibraryStore {
     String id, {
     required String title,
     required String? author,
+    String? titleReading,
   }) async {
     final works = await loadWorks();
     final index = works.indexWhere((w) => w.id == id);
     if (index < 0) return;
     final trimmed = author?.trim();
-    works[index] = works[index].withMeta(
-      title: title.trim(),
-      author: trimmed == null || trimmed.isEmpty ? null : trimmed,
-      manual: true,
-    );
+    final reading = titleReading?.trim();
+    works[index] = works[index]
+        .withMeta(
+          title: title.trim(),
+          author: trimmed == null || trimmed.isEmpty ? null : trimmed,
+          manual: true,
+        )
+        .withTitleReading(reading == null || reading.isEmpty ? null : reading);
     await saveWorks(works);
   }
 

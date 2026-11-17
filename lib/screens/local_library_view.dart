@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/author_profiles.dart';
 import 'package:novelty/local_library/kana_index.dart';
+import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -33,20 +34,37 @@ enum LocalSort {
   final String label;
 }
 
+/// 作品名の並べ替え用の読み。
+///
+/// 手で入れた読み仮名を優先し、なければ辞書（[reader]）で漢字を読む。
+/// 辞書がなければ作品名そのもの（漢字は「漢」の行に入る）。
+String workReading(LocalWork work, KanjiReader? reader) =>
+    work.titleReading ?? reader?.read(work.title) ?? work.title;
+
 /// 検索語と並び順を適用した作品一覧を返す。
 ///
-/// 検索は作品名と作者名（名前の変更を反映したもの）に当てる。
-/// タイトル順は「# → A〜Z → あ〜わ → 漢」の順に並べる。
+/// 検索は作品名・読み・作者名（名前の変更を反映したもの）に当てる。
+/// タイトル順は読みで「# → A〜Z → あ〜わ → 漢」の順に並べる。
 List<LocalWork> filterAndSortWorks(
   List<LocalWork> works,
   Map<String, ReadingPosition> positions, {
   required String query,
   required LocalSort sort,
   AuthorProfiles profiles = AuthorProfiles.empty,
+  KanjiReader? reader,
 }) {
+  final readings = <String, String>{};
+  String readingOf(LocalWork w) =>
+      readings[w.id] ??= workReading(w, reader);
+  int byTitle(LocalWork a, LocalWork b) =>
+      KanaIndex.compare(readingOf(a), readingOf(b));
+
   final q = query.trim().toLowerCase();
   bool matches(LocalWork w) {
     if (w.title.toLowerCase().contains(q)) return true;
+    if (KanaIndex.sortKey(readingOf(w)).contains(KanaIndex.sortKey(q))) {
+      return true;
+    }
     final author = profiles.effectiveName(w.author);
     return author?.toLowerCase().contains(q) ?? false;
   }
@@ -55,7 +73,7 @@ List<LocalWork> filterAndSortWorks(
 
   switch (sort) {
     case LocalSort.title:
-      result.sort((a, b) => KanaIndex.compare(a.title, b.title));
+      result.sort(byTitle);
     case LocalSort.added:
       result.sort((a, b) => b.addedAt.compareTo(a.addedAt));
     case LocalSort.recent:
@@ -63,9 +81,7 @@ List<LocalWork> filterAndSortWorks(
       result.sort((a, b) {
         final pa = positions[a.id]?.updatedAt;
         final pb = positions[b.id]?.updatedAt;
-        if (pa == null && pb == null) {
-          return KanaIndex.compare(a.title, b.title);
-        }
+        if (pa == null && pb == null) return byTitle(a, b);
         if (pa == null) return 1;
         if (pb == null) return -1;
         return pb.compareTo(pa);
@@ -91,6 +107,7 @@ class AuthorGroup {
     required this.name,
     required this.works,
     this.reading,
+    this.guessedReading,
   });
 
   /// グループ分けのキー（作者不明は空文字）。
@@ -101,6 +118,12 @@ class AuthorGroup {
 
   /// 読み仮名（未設定なら null）。
   final String? reading;
+
+  /// 辞書から推測した読み（読み仮名が未設定のときだけ。推測できなければ null）。
+  final String? guessedReading;
+
+  /// 並べ替えに使う読み。
+  String get sortText => reading ?? guessedReading ?? name;
 
   /// この作者の作品。
   final List<LocalWork> works;
@@ -116,7 +139,7 @@ class AuthorGroup {
 
   /// 右端のインデックスの見出し。
   String get indexLabel =>
-      isUnknown ? KanaIndex.unknownLabel : KanaIndex.labelOf(reading ?? name);
+      isUnknown ? KanaIndex.unknownLabel : KanaIndex.labelOf(sortText);
 }
 
 /// 作者不明の作品をまとめるグループの表示名。
@@ -125,12 +148,14 @@ const unknownAuthorLabel = '作者不明';
 /// 作品を作者ごとにまとめる。
 ///
 /// 名前の変更（[profiles]）を反映し、表記揺れ（全角/半角・空白）は
-/// 同じ作者として扱う。読み仮名があればそれで並べ、作者不明は最後に置く。
+/// 同じ作者として扱う。読み仮名があればそれで、なければ辞書（[reader]）で
+/// 推測した読みで並べ、作者不明は最後に置く。
 /// [query] は作者名・読み仮名で絞り込む。
 List<AuthorGroup> groupByAuthor(
   List<LocalWork> works, {
   String query = '',
   AuthorProfiles profiles = AuthorProfiles.empty,
+  KanjiReader? reader,
 }) {
   final byKey = <String, List<LocalWork>>{};
   final names = <String, String>{};
@@ -146,24 +171,34 @@ List<AuthorGroup> groupByAuthor(
   for (final entry in byKey.entries) {
     final name = names[entry.key]!;
     final reading = entry.key.isEmpty ? null : profiles.readingOf(name);
+    final guessed = entry.key.isEmpty || reading != null
+        ? null
+        : reader?.read(name);
     final hit =
         q.isEmpty ||
         name.toLowerCase().contains(q) ||
-        (reading?.toLowerCase().contains(q) ?? false);
+        (reading?.toLowerCase().contains(q) ?? false) ||
+        (guessed?.contains(KanaIndex.sortKey(q)) ?? false);
     if (!hit) continue;
     groups.add(
       AuthorGroup(
         key: entry.key,
         name: name,
         reading: reading,
+        guessedReading: guessed,
         works: entry.value
-          ..sort((a, b) => KanaIndex.compare(a.title, b.title)),
+          ..sort(
+            (a, b) => KanaIndex.compare(
+              workReading(a, reader),
+              workReading(b, reader),
+            ),
+          ),
       ),
     );
   }
   return groups..sort((a, b) {
     if (a.isUnknown != b.isUnknown) return a.isUnknown ? 1 : -1;
-    return KanaIndex.compare(a.reading ?? a.name, b.reading ?? b.name);
+    return KanaIndex.compare(a.sortText, b.sortText);
   });
 }
 
@@ -183,6 +218,8 @@ class LocalLibraryView extends HookConsumerWidget {
     final query = useState('');
     final sort = useState(LocalSort.title);
     final viewMode = useState(LocalViewMode.works);
+    // 漢字の読みの辞書（読み込み中・失敗時は null で、漢字は「漢」にまとめる）
+    final reader = ref.watch(kanjiReaderProvider).value;
 
     final allWorks = worksAsync.value;
     final works = useMemoized(
@@ -194,14 +231,20 @@ class LocalLibraryView extends HookConsumerWidget {
               query: query.value,
               sort: sort.value,
               profiles: profiles,
+              reader: reader,
             ),
-      [allWorks, positions, query.value, sort.value, profiles],
+      [allWorks, positions, query.value, sort.value, profiles, reader],
     );
     final groups = useMemoized(
       () => allWorks == null
           ? const <AuthorGroup>[]
-          : groupByAuthor(allWorks, query: query.value, profiles: profiles),
-      [allWorks, query.value, profiles],
+          : groupByAuthor(
+              allWorks,
+              query: query.value,
+              profiles: profiles,
+              reader: reader,
+            ),
+      [allWorks, query.value, profiles, reader],
     );
     final isAuthorMode = viewMode.value == LocalViewMode.authors;
     final appSettings = ref.watch(settingsProvider).value;
@@ -356,7 +399,8 @@ class LocalLibraryView extends HookConsumerWidget {
                             items: works,
                             options: grid,
                             showIndex: sort.value == LocalSort.title,
-                            labelOf: (work) => KanaIndex.labelOf(work.title),
+                            labelOf: (work) =>
+                                KanaIndex.labelOf(workReading(work, reader)),
                             tileBuilder: (context, work) => _WorkGridTile(
                               work: work,
                               position: positions[work.id],
@@ -372,8 +416,9 @@ class LocalLibraryView extends HookConsumerWidget {
                             itemCount: works.length,
                             // 見出しが意味を持つのはタイトル順のときだけ
                             showIndex: sort.value == LocalSort.title,
-                            labelOf: (index) =>
-                                KanaIndex.labelOf(works[index].title),
+                            labelOf: (index) => KanaIndex.labelOf(
+                              workReading(works[index], reader),
+                            ),
                             itemBuilder: (context, index) {
                               final work = works[index];
                               return LocalWorkTile(
@@ -830,9 +875,13 @@ class _EditAuthorDialog extends HookWidget {
             const SizedBox(height: 12),
             TextField(
               controller: reading,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: '読み仮名',
-                helperText: '入れると右端の「あ〜わ」の正しい行に並びます',
+                hintText: group.guessedReading,
+                helperText: group.guessedReading == null
+                    ? '入れると右端の「あ〜わ」の正しい行に並びます'
+                    : '空欄なら薄字の推測した読みで並びます。'
+                          '違っていたら入れ直してください',
                 helperMaxLines: 2,
               ),
             ),
@@ -915,50 +964,72 @@ Future<void> showEditWorkMetaDialog(
   WidgetRef ref,
   LocalWork work,
 ) async {
-  final result = await showDialog<(String, String)>(
+  final guessed = ref.read(kanjiReaderProvider).value?.read(work.title);
+  final result = await showDialog<(String, String, String)>(
     context: context,
-    builder: (_) => _EditWorkMetaDialog(work: work),
+    builder: (_) => _EditWorkMetaDialog(work: work, guessedReading: guessed),
   );
   if (result == null) return;
-  final (title, author) = result;
+  final (title, author, reading) = result;
   await ref
       .read(localWorksProvider.notifier)
-      .editMeta(work.id, title: title, author: author);
+      .editMeta(
+        work.id,
+        title: title,
+        author: author,
+        titleReading: reading,
+      );
 }
 
 class _EditWorkMetaDialog extends HookWidget {
-  const _EditWorkMetaDialog({required this.work});
+  const _EditWorkMetaDialog({required this.work, this.guessedReading});
 
   final LocalWork work;
+
+  // 辞書から推測した作品名の読み（入力欄の薄字に出す）
+  final String? guessedReading;
 
   @override
   Widget build(BuildContext context) {
     final title = useTextEditingController(text: work.title);
     final author = useTextEditingController(text: work.author ?? '');
+    final reading = useTextEditingController(text: work.titleReading ?? '');
     useListenable(title);
     final titleEmpty = title.text.trim().isEmpty;
 
     return AlertDialog(
       title: const Text('作者・作品名を修正'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: title,
-            decoration: InputDecoration(
-              labelText: '作品名',
-              errorText: titleEmpty ? '作品名を入力してください' : null,
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: title,
+              decoration: InputDecoration(
+                labelText: '作品名',
+                errorText: titleEmpty ? '作品名を入力してください' : null,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: author,
-            decoration: const InputDecoration(
-              labelText: '作者',
-              helperText: '空欄にすると「作者不明」になります',
+            const SizedBox(height: 12),
+            TextField(
+              controller: reading,
+              decoration: InputDecoration(
+                labelText: '作品名の読み仮名',
+                hintText: guessedReading,
+                helperText: '空欄なら辞書で推測した読みで並びます',
+                helperMaxLines: 2,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            TextField(
+              controller: author,
+              decoration: const InputDecoration(
+                labelText: '作者',
+                helperText: '空欄にすると「作者不明」になります',
+              ),
+            ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
@@ -968,7 +1039,10 @@ class _EditWorkMetaDialog extends HookWidget {
         FilledButton(
           onPressed: titleEmpty
               ? null
-              : () => Navigator.pop(context, (title.text, author.text)),
+              : () => Navigator.pop(
+                  context,
+                  (title.text, author.text, reading.text),
+                ),
           child: const Text('保存'),
         ),
       ],

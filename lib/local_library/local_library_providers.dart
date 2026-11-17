@@ -57,9 +57,15 @@ class LocalWorksNotifier extends AsyncNotifier<List<LocalWork>> {
     String id, {
     required String title,
     required String? author,
+    String? titleReading,
   }) async {
     final store = await ref.read(localLibraryStoreProvider.future);
-    await store.editWorkMeta(id, title: title, author: author);
+    await store.editWorkMeta(
+      id,
+      title: title,
+      author: author,
+      titleReading: titleReading,
+    );
     state = AsyncData(await store.loadWorks());
   }
 

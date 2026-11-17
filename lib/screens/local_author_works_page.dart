@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/author_profiles.dart';
+import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -40,6 +41,7 @@ class LocalAuthorWorksPage extends HookConsumerWidget {
     final matched = groupByAuthor(
       works,
       profiles: profiles,
+      reader: ref.watch(kanjiReaderProvider).value,
     ).where((g) => g.key == currentKey.value);
     final group = matched.isEmpty ? null : matched.first;
     final authorWorks = group?.works ?? const <LocalWork>[];

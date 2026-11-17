@@ -88,6 +88,7 @@ flutter:
   assets:
     - assets/app_icon/base.svg
     - assets/fonts/OFL.txt
+    - assets/dict/readings.tsv.gz
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
