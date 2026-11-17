@@ -193,6 +193,18 @@ class VoicevoxBridge {
   static Future<void> stop() => _channel.invokeMethod<void>('stop');
 }
 
+/// VOICEVOX の失敗を、人が読める文にする（どの段階で何が起きたか）。
+String describeVoicevoxError(Object error) {
+  if (error is PlatformException) {
+    final details = error.details;
+    return [
+      error.message ?? error.code,
+      if (details is String && details.isNotEmpty) details,
+    ].join('\n');
+  }
+  return error.toString();
+}
+
 /// VOICEVOX で声を作って読むエンジン。
 class VoicevoxEngine implements SpeechEngine {
   VoicevoxRequest? _next;
@@ -200,14 +212,48 @@ class VoicevoxEngine implements SpeechEngine {
 
   static Future<void>? _prepared;
 
+  /// 最後に起きた VOICEVOX の失敗（無ければ null）。画面に出して原因を伝える。
+  static final ValueNotifier<String?> lastError = ValueNotifier(null);
+
   /// 声の部品を準備する（失敗したら次にやり直す）。
   static Future<void> ensurePrepared() async {
     final future = _prepared ??= VoicevoxBridge.prepare();
     try {
       await future;
-    } on Object {
+      lastError.value = null;
+    } on Object catch (e) {
       if (identical(_prepared, future)) _prepared = null;
+      lastError.value = describeVoicevoxError(e);
       rethrow;
+    }
+  }
+
+  /// 準備して短い文を1つ作ってみる（設定画面の診断用）。成功なら null。
+  static Future<String?> diagnose() async {
+    try {
+      final watch = Stopwatch()..start();
+      await ensurePrepared();
+      final prepared = watch.elapsedMilliseconds;
+      await VoicevoxBridge.synthesize(
+        VoicevoxRequest(
+          text: 'テストです。',
+          styleId: voicevoxCharacters.first.normal,
+          speed: 1,
+          pitch: 0,
+          intonation: 1,
+          volume: 1,
+        ),
+      );
+      lastError.value = null;
+      debugPrint(
+        'VOICEVOX 診断: 準備 ${prepared}ms・合成 '
+        '${watch.elapsedMilliseconds - prepared}ms',
+      );
+      return null;
+    } on Object catch (e) {
+      final message = describeVoicevoxError(e);
+      lastError.value = message;
+      return message;
     }
   }
 
@@ -246,16 +292,22 @@ class VoicevoxEngine implements SpeechEngine {
     final base = _next;
     if (base == null) return;
     await ensurePrepared();
-    final path = await VoicevoxBridge.synthesize(
-      VoicevoxRequest(
-        text: text,
-        styleId: base.styleId,
-        speed: base.speed,
-        pitch: base.pitch,
-        intonation: base.intonation,
-        volume: base.volume,
-      ),
-    );
+    final String path;
+    try {
+      path = await VoicevoxBridge.synthesize(
+        VoicevoxRequest(
+          text: text,
+          styleId: base.styleId,
+          speed: base.speed,
+          pitch: base.pitch,
+          intonation: base.intonation,
+          volume: base.volume,
+        ),
+      );
+    } on Object catch (e) {
+      lastError.value = describeVoicevoxError(e);
+      rethrow;
+    }
     // 声を作っている間に止められていたら鳴らさない
     if (_stopped) return;
     await VoicevoxBridge.play(path);
@@ -289,8 +341,18 @@ class CompositeSpeechEngine implements SpeechEngine {
   final SpeechEngine _voicevox;
   late SpeechEngine _current = _system;
 
+  // 一度失敗したら、この読み上げの間は VOICEVOX を使わない
+  // （毎文やり直して一瞬で読み飛ばすのを防ぐ）
+  bool _voicevoxBroken = false;
+
+  // 端末の声へ切り替えるときに設定し直すため、最後の値を覚えておく
+  SpeechProsody? _lastProsody;
+  SpeechDirection? _lastDirection;
+
   Future<bool> _useVoicevox(String? voice) async =>
-      voicevoxCharacterOf(voice) != null && await VoicevoxBridge.isAvailable();
+      !_voicevoxBroken &&
+      voicevoxCharacterOf(voice) != null &&
+      await VoicevoxBridge.isAvailable();
 
   @override
   Future<void> apply(
@@ -298,6 +360,8 @@ class CompositeSpeechEngine implements SpeechEngine {
     String? voice,
     SpeechDirection? direction,
   }) async {
+    _lastProsody = prosody;
+    _lastDirection = direction;
     final next = await _useVoicevox(voice) ? _voicevox : _system;
     if (!identical(next, _current)) await _current.stop();
     _current = next;
@@ -336,7 +400,13 @@ class CompositeSpeechEngine implements SpeechEngine {
       } on Object catch (e) {
         // 準備に失敗したなどで VOICEVOX が使えないときは端末の声で読む
         debugPrint('VOICEVOX で読めなかったため端末の声で読みます: $e');
+        _voicevoxBroken = true;
         _current = _system;
+        // 端末の声の準備（読み終わりまで待つ設定など）をしてから読む
+        final prosody = _lastProsody;
+        if (prosody != null) {
+          await _system.apply(prosody, direction: _lastDirection);
+        }
       }
     }
     await _system.speak(text);

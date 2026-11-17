@@ -392,6 +392,7 @@ class ReaderSettingsPage extends ConsumerWidget {
           onDialogueChanged: (name) => saveActing(dialogueVoice: name),
         ),
         _ActingPreview(settings: settings),
+        const _VoicevoxDiagnosis(),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Text(
@@ -813,6 +814,61 @@ class _ActingPreviewState extends State<_ActingPreview> {
               '（強さ ${(direction.intensity * 100).round()}%）',
             ),
       onTap: () => unawaited(_play()),
+    );
+  }
+}
+
+/// VOICEVOX の準備・診断（失敗したときは理由をそのまま見せる）。
+class _VoicevoxDiagnosis extends StatefulWidget {
+  const _VoicevoxDiagnosis();
+
+  @override
+  State<_VoicevoxDiagnosis> createState() => _VoicevoxDiagnosisState();
+}
+
+class _VoicevoxDiagnosisState extends State<_VoicevoxDiagnosis> {
+  bool _running = false;
+  String? _result;
+  late final Future<bool> _available = VoicevoxBridge.isAvailable();
+
+  Future<void> _run() async {
+    setState(() {
+      _running = true;
+      _result = null;
+    });
+    final watch = Stopwatch()..start();
+    final error = await VoicevoxEngine.diagnose();
+    if (!mounted) return;
+    final seconds = (watch.elapsedMilliseconds / 1000).toStringAsFixed(1);
+    setState(() {
+      _running = false;
+      _result = error == null
+          ? '準備できました（$seconds 秒）'
+          : '失敗しました：\n$error';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _available,
+      builder: (context, snapshot) {
+        if (snapshot.data != true) return const SizedBox.shrink();
+        final result = _result;
+        return ListTile(
+          leading: _running
+              ? const SizedBox.square(
+                  dimension: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.build_outlined),
+          title: const Text('VOICEVOX の準備・診断'),
+          subtitle: result == null
+              ? const Text('声の部品を準備して、短い文を1つ作ってみます')
+              : SelectableText(result),
+          onTap: _running ? null : () => unawaited(_run()),
+        );
+      },
     );
   }
 }

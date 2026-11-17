@@ -117,16 +117,18 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         val dictDir = File(root, "dict")
         val dictMarker = File(dictDir, ".done")
         if (!dictMarker.exists()) {
-            dictDir.deleteRecursively()
-            dictDir.mkdirs()
-            unzipAsset("$ASSET_DIR/$DICT_ZIP", dictDir)
-            dictMarker.writeText("ok")
+            step("辞書の展開") {
+                dictDir.deleteRecursively()
+                dictDir.mkdirs()
+                unzipAsset("$ASSET_DIR/$DICT_ZIP", dictDir)
+                dictMarker.writeText("ok")
+            }
         }
         val modelFiles = MODEL_FILES.map { name ->
             val target = File(root, name)
             val expected = assetLength("$ASSET_DIR/$name")
             if (!target.exists() || (expected >= 0 && target.length() != expected)) {
-                copyAsset("$ASSET_DIR/$name", target)
+                step("声のモデルのコピー（$name）") { copyAsset("$ASSET_DIR/$name", target) }
             }
             target
         }
@@ -134,17 +136,29 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         val dictPath = dictDir.listFiles()?.firstOrNull { it.isDirectory }?.absolutePath
             ?: dictDir.absolutePath
 
-        val ort = Onnxruntime.loadOnce().perform()
-        val synth = Synthesizer.builder(ort, OpenJtalk(dictPath))
-            .cpuNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(1, 8))
-            .build()
+        val ort = step("ONNX Runtime の読み込み") { Onnxruntime.loadOnce().perform() }
+        val openJtalk = step("辞書の読み込み（$dictPath）") { OpenJtalk(dictPath) }
+        val synth = step("音声合成の準備") {
+            Synthesizer.builder(ort, openJtalk)
+                .cpuNumThreads(Runtime.getRuntime().availableProcessors().coerceIn(1, 8))
+                .build()
+        }
         for (file in modelFiles) {
-            VoiceModelFile(file.absolutePath).use { model ->
-                synth.loadVoiceModel(model).perform()
+            step("声のモデルの読み込み（${file.name}）") {
+                VoiceModelFile(file.absolutePath).use { model ->
+                    synth.loadVoiceModel(model).perform()
+                }
             }
         }
         synthesizer = synth
         Log.i(TAG, "VOICEVOX ready")
+    }
+
+    // どの段階で失敗したかが分かるよう、段階の名前を付けて投げ直す
+    private fun <T> step(name: String, block: () -> T): T = try {
+        block()
+    } catch (e: Throwable) {
+        throw RuntimeException("$name に失敗: $e", e)
     }
 
     private fun assetLength(path: String): Long = runCatching {
@@ -208,7 +222,9 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         val future = synthesisThread.submit<File> {
             ensurePreparedOnSynthesisThread()
             val synth = synthesizer ?: throw IllegalStateException("VOICEVOX is not ready")
-            val query = synth.createAudioQuery(request.text, request.styleId).apply {
+            val query = step("読みの解析") {
+                synth.createAudioQuery(request.text, request.styleId)
+            }.apply {
                 speedScale = request.speed
                 pitchScale = request.pitch
                 intonationScale = request.intonation
@@ -216,7 +232,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 prePhonemeLength = 0.05
                 postPhonemeLength = 0.05
             }
-            val wav = synth.synthesis(query, request.styleId).perform()
+            val wav = step("声の合成") { synth.synthesis(query, request.styleId).perform() }
             File.createTempFile("vv", ".wav", context.cacheDir).apply { writeBytes(wav) }
         }
         cache[request.key] = future
@@ -284,7 +300,11 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             } catch (e: Throwable) {
                 val cause = (e as? java.util.concurrent.ExecutionException)?.cause ?: e
                 Log.w(TAG, "VOICEVOX failed", cause)
-                main.post { result.error("voicevox", cause.toString(), null) }
+                // 原因の連鎖を短くまとめて Flutter 側に見せる
+                val chain = generateSequence(cause) { it.cause }
+                    .take(4)
+                    .joinToString("\n← ") { it.toString() }
+                main.post { result.error("voicevox", cause.message ?: cause.toString(), chain) }
             }
         }
     }

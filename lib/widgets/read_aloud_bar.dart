@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
+import 'package:novelty/read_aloud/voicevox_engine.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -59,6 +60,19 @@ class ReadAloudBar extends StatelessWidget {
                 Text(
                   '${controller.index + 1} / $total',
                   style: Theme.of(context).textTheme.labelMedium,
+                ),
+                // VOICEVOX が使えず端末の声で読んでいるときは知らせる
+                ValueListenableBuilder<String?>(
+                  valueListenable: VoicevoxEngine.lastError,
+                  builder: (context, error, _) => error == null
+                      ? const SizedBox.shrink()
+                      : Text(
+                          'VOICEVOX 失敗→端末の声',
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.error,
+                              ),
+                        ),
                 ),
                 // 今の文をどう演じているか（演技を切っているときは出さない）
                 if (controller.acting > 0)
