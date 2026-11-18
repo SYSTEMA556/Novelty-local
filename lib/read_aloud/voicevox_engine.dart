@@ -204,8 +204,15 @@ class VoicevoxBridge {
   static Future<void> prepare() => _channel.invokeMethod<void>('prepare');
 
   /// 声を作り、WAV ファイルの場所を返す（取り消されたら null）。
-  static Future<String?> synthesize(VoicevoxRequest request) =>
-      _channel.invokeMethod<String>('synthesize', request.toMap());
+  ///
+  /// [fresh] なら取っておいた声を使わずに作り直す（診断で速さを測るため）。
+  static Future<String?> synthesize(
+    VoicevoxRequest request, {
+    bool fresh = false,
+  }) => _channel.invokeMethod<String>('synthesize', {
+    ...request.toMap(),
+    'fresh': fresh,
+  });
 
   /// [ahead] 文先の声を先に作っておく（待たない）。
   ///
@@ -316,6 +323,7 @@ class VoicevoxEngine implements SpeechEngine {
             intonation: 1,
             volume: 1,
           ),
+          fresh: true,
         );
       }
       final timing = await VoicevoxBridge.lastTiming();

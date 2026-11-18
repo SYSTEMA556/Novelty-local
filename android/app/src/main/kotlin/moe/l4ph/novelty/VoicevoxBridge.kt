@@ -123,6 +123,10 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             "prepare" -> waitInBackground(result) { ensurePrepared(); true }
             "synthesize" -> {
                 val request = SynthesisRequest.from(call)
+                // 診断では、取っておいた声を使わず必ず作り直して速さを測る
+                if (call.argument<Boolean>("fresh") == true) {
+                    synchronized(cache) { cache.remove(request.key) }
+                }
                 waitInBackground(result) {
                     val watch = System.nanoTime()
                     val file = synthesize(request, PRIORITY_NOW).get()
