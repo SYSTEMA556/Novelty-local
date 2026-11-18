@@ -276,7 +276,18 @@ class VoicevoxBridge {
       _channel.invokeMethod<void>('cancelPending');
 
   /// 最後に作った声の処理時間（合成にかかった時間・待った時間・声の長さ、ミリ秒）。
-  static Future<({int synthesisMs, int waitMs, int audioMs})>
+  ///
+  /// あわせて、ネイティブ側のメモリ使用量（MB）・上限・解放した回数も返す。
+  static Future<
+    ({
+      int synthesisMs,
+      int waitMs,
+      int audioMs,
+      int nativeMb,
+      int limitMb,
+      int refreshes,
+    })
+  >
   lastTiming() async {
     final m = await _channel.invokeMapMethod<String, Object?>('lastTiming');
     int read(String key) => (m?[key] as num?)?.toInt() ?? 0;
@@ -284,6 +295,9 @@ class VoicevoxBridge {
       synthesisMs: read('synthesisMs'),
       waitMs: read('waitMs'),
       audioMs: read('audioMs'),
+      nativeMb: read('nativeMb'),
+      limitMb: read('limitMb'),
+      refreshes: read('refreshes'),
     );
   }
 }
@@ -371,6 +385,10 @@ class VoicevoxEngine implements SpeechEngine {
           ].join(),
           if (speed >= 1) '1倍速より速いので、先読みが効けば途切れずに読めます',
           if (speed > 0 && speed < 1) '1倍速より遅いため、文と文の間に待ちが出ます',
+          [
+            'メモリ ${timing.nativeMb} MB（上限 ${timing.limitMb} MB',
+            '・これまでに ${timing.refreshes} 回解放）',
+          ].join(),
         ].join('\n'),
       );
     } on Object catch (e) {

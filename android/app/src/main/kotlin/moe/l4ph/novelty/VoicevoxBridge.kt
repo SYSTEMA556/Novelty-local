@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.app.ActivityManager
 import android.os.BatteryManager
+import android.os.Debug
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -155,7 +157,14 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 result.success(null)
             }
             "lastTiming" -> result.success(
-                mapOf("synthesisMs" to lastSynthesisMs, "waitMs" to lastWaitMs, "audioMs" to lastAudioMs),
+                mapOf(
+                    "synthesisMs" to lastSynthesisMs,
+                    "waitMs" to lastWaitMs,
+                    "audioMs" to lastAudioMs,
+                    "nativeMb" to nativeMb(),
+                    "limitMb" to nativeLimitMb(),
+                    "refreshes" to refreshCount,
+                ),
             )
             "stop" -> {
                 stopPlayback()
@@ -241,8 +250,10 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             .cpuNumThreads(threads)
             .build()
         val paths = loadedModels.keys.toList()
-        loadedModels.clear()
+        // 古いコアのモデルを外してから差し替える（コアのメモリは GC まで残るため）
+        unloadDownTo(0)
         synthesizer = synth
+        System.gc()
         builtThreads = threads
         for (path in paths) loadModel(path)
         Log.i(TAG, "VOICEVOX built with $threads threads")
@@ -293,6 +304,42 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         Log.i(TAG, "trimMemory $level")
         runOnSynthesis(PRIORITY_SETUP) { unloadDownTo(1) }
         cancelPending()
+    }
+
+    // ---- メモリの見張り ----
+
+    // 声を作るたびに、計算用のメモリ（ONNX Runtime の作業領域）が少しずつ膨らみ、
+    // 数分読むとアプリが落ちることがあった。ネイティブ側のメモリが上限を超えたら、
+    // 声のモデルを一度外して作業領域ごと手放し、最後に使ったモデルだけ読み込み直す。
+    @Volatile private var refreshCount = 0
+
+    private fun nativeMb(): Long = Debug.getNativeHeapAllocatedSize() / (1024 * 1024)
+
+    // 端末のメモリの量に合わせた上限（8GB の端末で標準 約900MB・全力 約1300MB）
+    private fun nativeLimitMb(): Long {
+        val info = ActivityManager.MemoryInfo()
+        runCatching {
+            (context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager)
+                .getMemoryInfo(info)
+        }
+        val totalMb = (info.totalMem / (1024 * 1024)).coerceAtLeast(2048)
+        return if (isFullPower()) totalMb / 6 else totalMb / 9
+    }
+
+    // 合成スレッドで呼ぶ
+    private fun watchMemory() {
+        val used = nativeMb()
+        if (used < nativeLimitMb()) return
+        val keep = loadedModels.keys.lastOrNull()
+        Log.i(TAG, "native ${used}MB >= ${nativeLimitMb()}MB, refreshing models")
+        unloadDownTo(0)
+        // 古いものの後片付け（ネイティブのメモリは Java の GC で解放されるものがある）
+        System.gc()
+        @Suppress("DEPRECATION")
+        System.runFinalization()
+        if (keep != null) runCatching { loadModel(keep) }
+        refreshCount++
+        Log.i(TAG, "native after refresh ${nativeMb()}MB")
     }
 
     // ---- パフォーマンスモード ----
@@ -424,6 +471,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             val started = System.nanoTime()
             val wav = step("声の合成") { synth.synthesis(query, request.styleId).perform() }
             lastSynthesisMs = (System.nanoTime() - started) / 1_000_000
+            watchMemory()
             // 24kHz・16bit・モノラルの WAV（先頭 44 バイトはヘッダー）
             lastAudioMs = ((wav.size - 44).coerceAtLeast(0) / 48).toLong()
             File.createTempFile("voicevox_", ".wav", context.cacheDir).apply { writeBytes(wav) }
