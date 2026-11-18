@@ -84,4 +84,24 @@ void main() {
     expect(fast.pitch, 0.15);
     expect(fast.intonation, 2.0);
   });
+
+  group('長い文を分ける', () {
+    test('短い文はそのまま', () {
+      expect(splitForVoicevox('こんにちは。'), ['こんにちは。']);
+    });
+
+    test('上限を超える文は読点の後ろで分ける', () {
+      final text = '${'あ' * 30}、${'い' * 30}、${'う' * 30}。';
+      final chunks = splitForVoicevox(text, maxLength: 40);
+      expect(chunks.join(), text);
+      expect(chunks.every((c) => c.length <= 40), isTrue);
+      expect(chunks.first, '${'あ' * 30}、');
+    });
+
+    test('切れ目が無ければ上限で切る', () {
+      final text = 'あ' * 100;
+      final chunks = splitForVoicevox(text, maxLength: 40);
+      expect(chunks.map((c) => c.length), [40, 40, 20]);
+    });
+  });
 }

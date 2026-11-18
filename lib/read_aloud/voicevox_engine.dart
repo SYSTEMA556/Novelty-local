@@ -179,6 +179,35 @@ class VoicevoxRequest {
   };
 }
 
+/// VOICEVOX に一度に渡す文の長さの上限。
+///
+/// 声を作るときのメモリは文の長さに比例して増えるため、句読点の少ない長い段落を
+/// まるごと渡すと、メモリが足りずにアプリが落ちることがあった。
+const voicevoxMaxChunk = 80;
+
+/// 長い文を、読点や括弧の切れ目でなるべく自然に [maxLength] 文字以内に分ける。
+List<String> splitForVoicevox(String text, {int maxLength = voicevoxMaxChunk}) {
+  if (text.length <= maxLength) return [text];
+  const breaks = '、，。！？!?」』）) 　';
+  final chunks = <String>[];
+  var rest = text;
+  while (rest.length > maxLength) {
+    var cut = -1;
+    // 上限の手前で、いちばん後ろの切れ目を探す（短すぎる切れ目は使わない）
+    for (var i = maxLength; i >= maxLength ~/ 3; i--) {
+      if (breaks.contains(rest[i - 1])) {
+        cut = i;
+        break;
+      }
+    }
+    if (cut < 0) cut = maxLength;
+    chunks.add(rest.substring(0, cut));
+    rest = rest.substring(cut);
+  }
+  if (rest.trim().isNotEmpty) chunks.add(rest);
+  return chunks;
+}
+
 /// Android 側（VoicevoxBridge.kt）とのやりとり。
 class VoicevoxBridge {
   VoicevoxBridge._();
@@ -380,8 +409,14 @@ class VoicevoxEngine implements SpeechEngine {
         const Duration(seconds: 3),
         onTimeout: () {},
       );
+      // 長い文は分けて作るので、先読みも最初の一切れだけ作っておく
       await VoicevoxBridge.prefetch(
-        VoicevoxRequest.of(text, prosody, _characterOf(voice), direction),
+        VoicevoxRequest.of(
+          splitForVoicevox(text).first,
+          prosody,
+          _characterOf(voice),
+          direction,
+        ),
         ahead: ahead,
       );
     } on Object catch (e) {
@@ -394,28 +429,41 @@ class VoicevoxEngine implements SpeechEngine {
     final base = _next;
     if (base == null) return;
     await ensurePrepared();
-    final String? path;
-    try {
-      final pending = VoicevoxBridge.synthesize(
-        VoicevoxRequest(
-          text: text,
-          styleId: base.styleId,
-          speed: base.speed,
-          pitch: base.pitch,
-          intonation: base.intonation,
-          volume: base.volume,
-        ),
-      );
-      final dispatched = _dispatched;
-      if (dispatched != null && !dispatched.isCompleted) dispatched.complete();
-      path = await pending;
-    } on Object catch (e) {
-      lastError.value = describeVoicevoxError(e);
-      rethrow;
+    VoicevoxRequest requestOf(String chunk) => VoicevoxRequest(
+      text: chunk,
+      styleId: base.styleId,
+      speed: base.speed,
+      pitch: base.pitch,
+      intonation: base.intonation,
+      volume: base.volume,
+    );
+    // 長い文は切れ目で分け、一切れずつ作って鳴らす（次の一切れは鳴らしている間に作る）
+    final chunks = splitForVoicevox(text);
+    for (var i = 0; i < chunks.length; i++) {
+      final String? path;
+      try {
+        final pending = VoicevoxBridge.synthesize(requestOf(chunks[i]));
+        final dispatched = _dispatched;
+        if (dispatched != null && !dispatched.isCompleted) {
+          dispatched.complete();
+        }
+        if (i + 1 < chunks.length) {
+          unawaited(
+            VoicevoxBridge.prefetch(requestOf(chunks[i + 1])).catchError(
+              (Object e) => debugPrint('VOICEVOX の先読みに失敗しました: $e'),
+            ),
+          );
+        }
+        path = await pending;
+      } on Object catch (e) {
+        lastError.value = describeVoicevoxError(e);
+        rethrow;
+      }
+      // 声を作っている間に止められた・取り消されたら鳴らさない
+      if (_stopped || path == null) return;
+      await VoicevoxBridge.play(path);
+      if (_stopped) return;
     }
-    // 声を作っている間に止められた・取り消されたら鳴らさない
-    if (_stopped || path == null) return;
-    await VoicevoxBridge.play(path);
   }
 
   @override

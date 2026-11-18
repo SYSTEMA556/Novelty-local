@@ -232,7 +232,6 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             }
         }
         step("音声合成の準備") { build(desiredThreads()) }
-        if (isFullPower()) loadAllModels()
         Log.i(TAG, "VOICEVOX ready")
     }
 
@@ -260,10 +259,6 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         }
     }
 
-    private fun loadAllModels() {
-        for (path in modelOfStyle.values.toSet()) loadModel(path)
-    }
-
     // 声の種類に必要なモデルを読み込む（標準では、使わない声のモデルは外してメモリを空ける）
     private fun ensureModelFor(styleId: Int) {
         val path = modelOfStyle[styleId]
@@ -273,14 +268,31 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             loadedModels[path]?.let { loadedModels.remove(path); loadedModels[path] = it }
             return
         }
-        if (!isFullPower()) {
-            while (loadedModels.size >= MAX_LOADED_MODELS_STANDARD) {
-                val (oldPath, oldId) = loadedModels.entries.first().toPair()
-                runCatching { synthesizer?.unloadVoiceModel(oldId) }
-                loadedModels.remove(oldPath)
-            }
-        }
+        // 声のモデルは1つで数百MBのメモリを使うため、同時に読み込む数を絞る
+        // （全部読み込むとメモリが足りずにアプリが落ちることがあった）
+        val limit = if (isFullPower()) MAX_LOADED_MODELS_FULL else MAX_LOADED_MODELS_STANDARD
+        unloadDownTo(limit - 1)
         loadModel(path)
+    }
+
+    // 使っていない順にモデルを外して、[keep] 個以下にする（合成スレッドで呼ぶ）
+    private fun unloadDownTo(keep: Int) {
+        while (loadedModels.size > keep.coerceAtLeast(0)) {
+            val (oldPath, oldId) = loadedModels.entries.first().toPair()
+            runCatching { synthesizer?.unloadVoiceModel(oldId) }
+            loadedModels.remove(oldPath)
+        }
+    }
+
+    /**
+     * 端末のメモリが足りなくなってきたときに呼ばれる（MainActivity.onTrimMemory）。
+     * 最後に使ったモデル1つだけを残して外し、取っておいた声も捨てる。
+     */
+    fun trimMemory(level: Int) {
+        if (synthesizer == null) return
+        Log.i(TAG, "trimMemory $level")
+        runOnSynthesis(PRIORITY_SETUP) { unloadDownTo(1) }
+        cancelPending()
     }
 
     // ---- パフォーマンスモード ----
@@ -303,13 +315,12 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         return if (isFullPower()) cores else cores.coerceAtMost(4)
     }
 
-    // 合成スレッドで呼ぶ：スレッド数が変わっていれば作り直し、全力なら全モデルを読み込む
+    // 合成スレッドで呼ぶ：スレッド数が変わっていれば作り直す
     private fun applyPerformance() {
         if (synthesizer == null) return
         runCatching {
             val threads = desiredThreads()
             if (threads != builtThreads) build(threads)
-            if (isFullPower()) loadAllModels()
         }.onFailure { Log.w(TAG, "performance change failed", it) }
     }
 
@@ -521,7 +532,8 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         private const val PRIORITY_NOW = 10
 
         // 標準モードで同時に読み込んでおくモデルの数（メモリを抑える）
-        private const val MAX_LOADED_MODELS_STANDARD = 3
+        private const val MAX_LOADED_MODELS_STANDARD = 2
+        private const val MAX_LOADED_MODELS_FULL = 3
 
         // 0.vvm: 四国めたん・ずんだもん（ノーマル・あまあま・ツンツン・セクシー）
         // 2.vvm: 九州そら（ノーマル・あまあま・ツンツン・セクシー）

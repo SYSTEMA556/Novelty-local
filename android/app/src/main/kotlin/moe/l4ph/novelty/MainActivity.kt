@@ -12,6 +12,12 @@ class MainActivity : FlutterActivity() {
         voicevox = VoicevoxBridge(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
     }
 
+    // メモリが足りなくなってきたら、VOICEVOX の声のモデルを外して空ける
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_LOW) voicevox?.trimMemory(level)
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         voicevox?.dispose()
         voicevox = null
