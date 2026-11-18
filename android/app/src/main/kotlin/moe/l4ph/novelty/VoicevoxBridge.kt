@@ -108,7 +108,13 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Future<File>>): Boolean {
             val remove = size > CACHE_SIZE
             if (remove) {
-                runCatching { if (eldest.value.isDone) eldest.value.get().delete() }
+                val future = eldest.value
+                if (future.isDone) {
+                    runCatching { future.get().delete() }
+                } else {
+                    // 作っている途中なら、出来上がったあとで消す
+                    waiters.execute { runCatching { future.get().delete() } }
+                }
             }
             return remove
         }
@@ -162,6 +168,8 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                     "waitMs" to lastWaitMs,
                     "audioMs" to lastAudioMs,
                     "nativeMb" to nativeMb(),
+                    "peakNativeMb" to peakNativeMb,
+                    "javaMb" to (Runtime.getRuntime().let { it.totalMemory() - it.freeMemory() } / (1024 * 1024)),
                     "limitMb" to nativeLimitMb(),
                     "refreshes" to refreshCount,
                 ),
@@ -203,6 +211,11 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
 
     private fun prepare() {
         if (synthesizer != null) return
+        // 前回までに作った声の一時ファイルが残っていれば消す（ストレージを食わないよう）
+        runCatching {
+            context.cacheDir.listFiles { f -> f.name.startsWith("voicevox_") }
+                ?.forEach { it.delete() }
+        }
         val root = File(context.filesDir, "voicevox").apply { mkdirs() }
         val dictDir = File(root, "dict")
         val dictMarker = File(dictDir, ".done")
@@ -327,8 +340,11 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     }
 
     // 合成スレッドで呼ぶ
+    @Volatile private var peakNativeMb = 0L
+
     private fun watchMemory() {
         val used = nativeMb()
+        if (used > peakNativeMb) peakNativeMb = used
         if (used < nativeLimitMb()) return
         val keep = loadedModels.keys.lastOrNull()
         Log.i(TAG, "native ${used}MB >= ${nativeLimitMb()}MB, refreshing models")

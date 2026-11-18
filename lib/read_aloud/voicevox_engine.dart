@@ -284,6 +284,8 @@ class VoicevoxBridge {
       int waitMs,
       int audioMs,
       int nativeMb,
+      int peakNativeMb,
+      int javaMb,
       int limitMb,
       int refreshes,
     })
@@ -296,6 +298,8 @@ class VoicevoxBridge {
       waitMs: read('waitMs'),
       audioMs: read('audioMs'),
       nativeMb: read('nativeMb'),
+      peakNativeMb: read('peakNativeMb'),
+      javaMb: read('javaMb'),
       limitMb: read('limitMb'),
       refreshes: read('refreshes'),
     );
@@ -386,9 +390,10 @@ class VoicevoxEngine implements SpeechEngine {
           if (speed >= 1) '1倍速より速いので、先読みが効けば途切れずに読めます',
           if (speed > 0 && speed < 1) '1倍速より遅いため、文と文の間に待ちが出ます',
           [
-            'メモリ ${timing.nativeMb} MB（上限 ${timing.limitMb} MB',
-            '・これまでに ${timing.refreshes} 回解放）',
+            'メモリ ${timing.nativeMb} MB（最大 ${timing.peakNativeMb} MB',
+            '・上限 ${timing.limitMb} MB・これまでに ${timing.refreshes} 回解放）',
           ].join(),
+          'Java 側のメモリ ${timing.javaMb} MB',
         ].join('\n'),
       );
     } on Object catch (e) {
