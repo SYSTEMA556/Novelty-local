@@ -50,6 +50,11 @@ class PlainTextNovelParser {
         bytes.length >= 2 &&
         ((bytes[0] == 0xFF && bytes[1] == 0xFE) ||
             (bytes[0] == 0xFE && bytes[1] == 0xFF));
+    // 0 のバイトは UTF-8 の文章には出てこないので、先に BOM の無い UTF-16 を見る
+    final bomless = hasUtf16Bom ? null : _decodeBomlessUtf16(bytes);
+    if (bomless != null) {
+      return (text: bomless, encoding: 'UTF-16', errors: 0);
+    }
     try {
       return (
         text: _decodeUnicode(bytes),
@@ -58,10 +63,6 @@ class PlainTextNovelParser {
       );
     } on UnsupportedTextEncodingException {
       // 下で UTF-8 以外を試す
-    }
-    final bomless = _decodeBomlessUtf16(bytes);
-    if (bomless != null) {
-      return (text: bomless, encoding: 'UTF-16', errors: 0);
     }
     final sjis = decodeShiftJis(bytes);
     final euc = decodeEucJp(bytes);
