@@ -8,12 +8,14 @@ import 'package:novelty/local_library/kana_index.dart';
 import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/local_library/read_aloud_playlist.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
 import 'package:novelty/screens/local_author_works_page.dart';
 import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
 import 'package:novelty/screens/local_meta_rules_page.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
+import 'package:novelty/screens/read_aloud_playlist_sheet.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/indexed_list.dart';
 
@@ -314,11 +316,14 @@ class LocalLibraryView extends HookConsumerWidget {
                   unawaited(runRedetectAll(context, ref));
                 case 'display':
                   unawaited(showLocalDisplayDialog(context, ref));
+                case 'playlist':
+                  unawaited(showReadAloudPlaylistSheet(context));
                 case 'rescan':
                   unawaited(showRescanSheet(context, ref));
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'playlist', child: Text('連続再生リスト')),
               PopupMenuItem(value: 'rescan', child: Text('取り込んだフォルダを再スキャン')),
               PopupMenuItem(value: 'display', child: Text('表示の設定（リスト／グリッド）')),
               PopupMenuItem(value: 'rules', child: Text('作者の読み取りルール')),
@@ -929,6 +934,7 @@ Future<void> showLocalWorkActions(
             subtitle: Text(work.fileName),
           ),
           const Divider(height: 1),
+          _PlaylistToggleTile(work: work, sheetContext: sheetContext),
           ListTile(
             leading: const Icon(Icons.edit_outlined),
             title: const Text('作者・作品名を修正'),
@@ -959,6 +965,30 @@ Future<void> showLocalWorkActions(
       ),
     ),
   );
+}
+
+/// 作品を連続再生リストに入れる・外す項目。
+class _PlaylistToggleTile extends ConsumerWidget {
+  const _PlaylistToggleTile({required this.work, required this.sheetContext});
+
+  final LocalWork work;
+  final BuildContext sheetContext;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final ids = ref.watch(readAloudPlaylistProvider).value ?? const [];
+    final inList = ids.contains(work.id);
+    final notifier = ref.read(readAloudPlaylistProvider.notifier);
+    return ListTile(
+      leading: Icon(inList ? Icons.playlist_remove : Icons.playlist_add),
+      title: Text(inList ? '連続再生リストから外す' : '連続再生リストに追加'),
+      subtitle: inList ? null : Text('いま${ids.length}作品・読み上げで順に流します'),
+      onTap: () {
+        Navigator.pop(sheetContext);
+        unawaited(inList ? notifier.remove(work.id) : notifier.add(work.id));
+      },
+    );
+  }
 }
 
 /// 作者・作品名の修正ダイアログ。保存すると再判定の対象外になる。

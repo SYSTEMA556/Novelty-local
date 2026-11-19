@@ -197,16 +197,32 @@ class NovelPage extends HookConsumerWidget {
         // 第 ep 話を [startAt] の文から読み上げる
         Future<void> startReading(
           int ep,
-          int Function(SpeechDocument document) startAt,
-        ) async {
+          int Function(SpeechDocument document) startAt, {
+          bool announce = false,
+        }) async {
           final elements = await loadEpisode(ep);
           if (elements == null) return;
+          // 通知・車の画面に出す「第N話 サブタイトル」
+          Episode? episodeData;
+          try {
+            final episodes = await ref.read(
+              episodeListProvider(source, workId, ((ep - 1) ~/ 100) + 1).future,
+            );
+            episodeData = episodes.where((e) => e.index == ep).firstOrNull;
+          } on Object catch (_) {
+            // 目次が読めなくても読み上げは続ける
+          }
+          final heading = buildTitle(novelInfo, ep, episodeData);
           // 古い読み上げを先に止める（端末の音声合成は1つを共有するため）
           readAloud.value?.dispose();
           final document = SpeechDocument.fromElements(elements);
           final controller = ReadAloudController(
             document: document,
             onCompleted: () => advanceRef.value?.call(),
+            mediaTitle: novelInfo.title ?? heading,
+            mediaSubtitle: heading,
+            // 次の話へ進んだときは、話の題を読んで知らせる
+            announcement: announce ? heading : null,
           );
           applyReadAloudSettings(controller, settingsValue);
           readAloud.value = controller;
@@ -231,7 +247,7 @@ class NovelPage extends HookConsumerWidget {
               ),
             );
           }
-          unawaited(startReading(ep + 1, (_) => 0));
+          unawaited(startReading(ep + 1, (_) => 0, announce: true));
         };
 
         // 読み上げボタン：一時停止中なら再開、それ以外は開始位置を選ぶ

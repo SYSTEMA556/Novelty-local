@@ -189,7 +189,28 @@ class ReadAloudController extends ChangeNotifier {
     SpeechEngine? engine,
     this.onPositionChanged,
     this.onCompleted,
-  }) : _engine = engine ?? CompositeSpeechEngine();
+    this.mediaTitle,
+    this.mediaSubtitle,
+    String? announcement,
+  }) : _engine = engine ?? CompositeSpeechEngine(),
+       _announcement = announcement;
+
+  /// 読み上げを始めたときに呼ばれる（通知・車のボタンとつなぐのに使う）。
+  ///
+  /// [mediaTitle] のある読み上げだけが対象。アプリの起動時に設定する。
+  static void Function(ReadAloudController controller)? onStartedPlaying;
+
+  /// 後始末のときに呼ばれる（通知・車のボタンとの接続を外すのに使う）。
+  static void Function(ReadAloudController controller)? onDisposed;
+
+  /// 通知・ロック画面・車の画面に出す題名（null なら出さない）。
+  final String? mediaTitle;
+
+  /// 通知などで題名の下に出す文（作者・話の番号など）。
+  final String? mediaSubtitle;
+
+  // 最初の文の前に読む案内（「次は、〇〇」など）。読んだら消す
+  String? _announcement;
 
   /// 読み上げる本文。
   final SpeechDocument document;
@@ -205,6 +226,7 @@ class ReadAloudController extends ChangeNotifier {
 
   ReadAloudStatus _status = ReadAloudStatus.stopped;
   int _index = 0;
+  bool _finished = false;
 
   // 読み上げループの世代。止める・位置を変えるたびに進め、古いループを終わらせる
   int _generation = 0;
@@ -250,6 +272,9 @@ class ReadAloudController extends ChangeNotifier {
 
   /// 今の文の番号。
   int get index => _index;
+
+  /// 最後の文まで読み終えたか（止めた・一時停止した場合は false）。
+  bool get finished => _finished;
 
   /// 今の文（文が無ければ null）。
   SpeechSegment? get currentSegment =>
@@ -311,6 +336,18 @@ class ReadAloudController extends ChangeNotifier {
   /// 前の文へ戻る。
   Future<void> previous() => _jump(_index - 1);
 
+  /// 今の速さでおよそ [seconds] 秒ぶん進む（負なら戻る）。
+  ///
+  /// 文の途中には入れないため、文の頭に合わせる。
+  Future<void> seekBySeconds(double seconds) => _jump(
+    indexAfterSeconds(
+      document,
+      from: _index,
+      seconds: seconds,
+      charsPerSecond: charsPerSecondAt(_rate),
+    ),
+  );
+
   Future<void> _jump(int target) async {
     if (document.segments.isEmpty) return;
     final clamped = target.clamp(0, document.segments.length - 1);
@@ -328,6 +365,8 @@ class ReadAloudController extends ChangeNotifier {
     if (document.segments.isEmpty) return;
     final generation = ++_generation;
     _status = ReadAloudStatus.playing;
+    _finished = false;
+    if (mediaTitle != null) onStartedPlaying?.call(this);
     notifyListeners();
     await _engine.stop();
     if (generation != _generation) return;
@@ -340,6 +379,19 @@ class ReadAloudController extends ChangeNotifier {
       notifyListeners();
       final direction = directions[_index];
       try {
+        // 話・作品の切り替わりでは、最初に題名などを読んで知らせる
+        if (_announcement case final announcement?) {
+          _announcement = null;
+          await _engine.apply(
+            SpeechProsody(rate: _rate, pitch: _pitch, volume: 1),
+            voice: _narrationVoice,
+          );
+          if (generation != _generation) return;
+          await _engine.speak(announcement);
+          if (generation != _generation) return;
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          if (generation != _generation) return;
+        }
         await _engine.apply(
           _prosodyOf(direction),
           voice: _voiceOf(direction),
@@ -375,6 +427,7 @@ class ReadAloudController extends ChangeNotifier {
       if (_index >= document.segments.length - 1) {
         // 最後まで読んだ
         _status = ReadAloudStatus.stopped;
+        _finished = true;
         notifyListeners();
         onCompleted?.call();
         return;
@@ -396,8 +449,42 @@ class ReadAloudController extends ChangeNotifier {
 
   @override
   void dispose() {
+    onDisposed?.call(this);
     _generation++;
     unawaited(_engine.dispose());
     super.dispose();
   }
+}
+
+/// 速さ [rate]（0.5 が標準）で1秒に読むおよその文字数。
+///
+/// 日本語の読み上げは標準の速さで1秒に8文字ほど。
+double charsPerSecondAt(double rate) => 8 * (rate <= 0 ? 0.5 : rate) / 0.5;
+
+/// [from] 番目の文から、およそ [seconds] 秒ぶん進んだ（負なら戻った）文の番号。
+///
+/// 文の長さを [charsPerSecond] で秒に直して数える。
+int indexAfterSeconds(
+  SpeechDocument document, {
+  required int from,
+  required double seconds,
+  required double charsPerSecond,
+}) {
+  final segments = document.segments;
+  if (segments.isEmpty) return 0;
+  var index = from.clamp(0, segments.length - 1);
+  final target = seconds.abs() * charsPerSecond;
+  var passed = 0;
+  if (seconds >= 0) {
+    while (index < segments.length - 1 && passed < target) {
+      passed += segments[index].text.length;
+      index++;
+    }
+  } else {
+    while (index > 0 && passed < target) {
+      index--;
+      passed += segments[index].text.length;
+    }
+  }
+  return index;
 }

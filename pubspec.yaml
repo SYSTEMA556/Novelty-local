@@ -31,6 +31,8 @@ workspace:
 # versions available, run `flutter pub outdated`.
 dependencies:
   archive: ^4.0.7
+  audio_service: ^0.18.19
+  audio_session: ^0.2.4
   dio: ^5.11.0
   drift: ^2.34.0
   dynamic_color: ^1.7.0

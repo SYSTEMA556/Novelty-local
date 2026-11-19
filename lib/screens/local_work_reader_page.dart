@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
@@ -6,53 +7,147 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/local_library/read_aloud_playlist.dart';
+import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/local_text_reader_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
+import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/read_aloud_bar.dart';
 
 /// ローカルライブラリの作品を開く。
-Future<void> openLocalWork(BuildContext context, LocalWork work) {
+///
+/// [autoPlay] なら、開いたらすぐ前回の続き（無ければ最初）から読み上げる。
+Future<void> openLocalWork(
+  BuildContext context,
+  LocalWork work, {
+  bool autoPlay = false,
+}) {
   return Navigator.of(context, rootNavigator: true).push(
-    MaterialPageRoute<void>(builder: (_) => LocalWorkReaderPage(work: work)),
+    MaterialPageRoute<void>(
+      builder: (_) => LocalWorkReaderPage(work: work, autoPlay: autoPlay),
+    ),
   );
+}
+
+/// 読み込んだ作品（本文と、その作品の読み上げ）。
+class _LoadedWork {
+  const _LoadedWork(this.work, this.elements, this.readAloud);
+
+  final LocalWork work;
+  final List<NovelContentElement> elements;
+  final ReadAloudController readAloud;
 }
 
 /// ローカルライブラリの作品を読み込んで表示する画面。
 ///
 /// 本文と読書位置の読み込みが終わってから読書画面を表示し、
 /// 前回の位置から再開できるようにする。
+///
+/// 連続再生リストに入っている作品を読み上げで最後まで読むと、
+/// リストの次の作品を読み込んで続けて読む。画面を消していても進めるよう、
+/// 次の作品の読み込みと読み上げの開始は画面の組み立て（build）の外で行う。
 class LocalWorkReaderPage extends HookConsumerWidget {
   /// コンストラクタ。
-  const LocalWorkReaderPage({required this.work, super.key});
+  const LocalWorkReaderPage({
+    required this.work,
+    this.autoPlay = false,
+    super.key,
+  });
 
   /// 表示する作品。
   final LocalWork work;
 
+  /// 開いたらすぐ読み上げるか。
+  final bool autoPlay;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final future = useMemoized(() async {
-      final store = await ref.read(localLibraryStoreProvider.future);
-      // 読書位置を先に読み込んでおく（復元に必要）
-      await ref.read(readingPositionsProvider.future);
-      final text = await store.readText(work.id);
-      // 長編でもUIが固まらないよう別Isolateで解析する
-      return parseInBackground(text);
-    }, [work.id]);
-    final snapshot = useFuture<List<NovelContentElement>>(future);
+    final loaded = useState<_LoadedWork?>(null);
+    final error = useState<Object?>(null);
+    final mounted = useIsMounted();
+    // 最後に作った読み上げ（閉じるときに片付ける）
+    final latest = useRef<ReadAloudController?>(null);
+    useEffect(() => () => latest.value?.dispose(), const []);
 
-    if (snapshot.hasError) {
+    final positions = ref.read(readingPositionsProvider.notifier);
+    // 読み終えたときの処理（作り直しても最新を呼べるよう ref に入れる）
+    final continueRef = useRef<void Function(LocalWork finished)?>(null);
+
+    Future<void> load(
+      LocalWork target, {
+      required bool play,
+      String? announcement,
+    }) async {
+      try {
+        final store = await ref.read(localLibraryStoreProvider.future);
+        // 読書位置を先に読み込んでおく（復元に必要）
+        final saved = await ref.read(readingPositionsProvider.future);
+        final text = await store.readText(target.id);
+        // 長編でもUIが固まらないよう別Isolateで解析する
+        final elements = await parseInBackground(text);
+        if (!mounted()) return;
+        final document = SpeechDocument.fromElements(elements);
+        final controller = createLocalReadAloud(
+          document: document,
+          title: target.title,
+          author: target.author,
+          workId: target.id,
+          positions: positions,
+          announcement: announcement,
+          onCompleted: () => continueRef.value?.call(target),
+        );
+        applyReadAloudSettings(controller, ref.read(settingsProvider).value);
+        final previous = latest.value;
+        latest.value = controller;
+        loaded.value = _LoadedWork(target, elements, controller);
+        previous?.dispose();
+        if (!play || document.segments.isEmpty) return;
+        // 前回の続きから。最後まで読んだ作品なら最初から
+        final ttsOffset = saved[target.id]?.ttsOffset;
+        var start = ttsOffset == null ? 0 : document.segmentIndexAt(ttsOffset);
+        if (start >= document.segments.length - 1) start = 0;
+        await controller.playFrom(start);
+      } on Object catch (e) {
+        if (mounted()) error.value = e;
+      }
+    }
+
+    // 連続再生リストの次の作品へ進む
+    continueRef.value = (finished) {
+      unawaited(() async {
+        final playlist = await ref.read(readAloudPlaylistProvider.future);
+        final nextId = nextInPlaylist(playlist, finished.id);
+        if (nextId == null) return;
+        final works = await ref.read(localWorksProvider.future);
+        final next = works.where((w) => w.id == nextId).firstOrNull;
+        if (next == null) return;
+        await load(next, play: true, announcement: '次は、${next.title}');
+      }());
+    };
+
+    useEffect(() {
+      unawaited(load(work, play: autoPlay));
+      return null;
+    }, [work.id]);
+
+    final current = loaded.value;
+    if (error.value case final e?) {
       return Scaffold(
-        appBar: AppBar(title: Text(work.title)),
-        body: Center(child: Text('読み込めませんでした: ${snapshot.error}')),
+        appBar: AppBar(title: Text(current?.work.title ?? work.title)),
+        body: Center(child: Text('読み込めませんでした: $e')),
       );
     }
-    final elements = snapshot.data;
-    if (elements == null) {
+    if (current == null) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     return LocalTextReaderPage(
-      title: work.title,
-      elements: elements,
-      workId: work.id,
+      // 作品が替わったら、しおり・表示位置を新しく作り直す
+      key: ValueKey(current.work.id),
+      title: current.work.title,
+      elements: current.elements,
+      workId: current.work.id,
+      sharedReadAloud: current.readAloud,
     );
   }
 }

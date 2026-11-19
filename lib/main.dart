@@ -9,6 +9,7 @@ import 'package:novelty/database/database.dart';
 import 'package:novelty/database/database_initialization.dart';
 import 'package:novelty/database/database_maintenance.dart';
 import 'package:novelty/local_library/kanji_reader.dart';
+import 'package:novelty/read_aloud/read_aloud_media.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
 import 'package:novelty/router/router.dart';
 import 'package:novelty/screens/database_maintenance_screen.dart';
@@ -25,6 +26,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerReadingDictionaryLicense();
   registerVoicevoxLicenses();
+  // 読み上げを通知・ハンドルのボタン・車の画面から操作できるようにする
+  unawaited(ReadAloudMedia.init());
 
   runApp(
     const ProviderScope(

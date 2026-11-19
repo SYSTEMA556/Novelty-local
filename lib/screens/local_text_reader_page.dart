@@ -80,6 +80,35 @@ String _stripExtension(String name) {
   return dot > 0 ? name.substring(0, dot) : name;
 }
 
+/// ローカルの作品を読み上げる [ReadAloudController] を作る。
+///
+/// 読み上げた位置は、次回「前回の続きから」読めるよう [positions] に保存する
+/// （[workId] が null なら保存しない）。
+ReadAloudController createLocalReadAloud({
+  required SpeechDocument document,
+  required String title,
+  required ReadingPositionsNotifier positions,
+  String? workId,
+  String? author,
+  String? announcement,
+  VoidCallback? onCompleted,
+}) {
+  return ReadAloudController(
+    document: document,
+    mediaTitle: title,
+    mediaSubtitle: author,
+    announcement: announcement,
+    onCompleted: onCompleted,
+    onPositionChanged: (segment) {
+      final id = workId;
+      if (id == null) return;
+      scheduleMicrotask(
+        () => positions.record(id, ttsOffset: segment.start),
+      );
+    },
+  );
+}
+
 /// ローカルのテキストファイルを表示する読書画面。
 ///
 /// 縦書き／横書き・ページめくり・ルビなどの閲覧設定は
@@ -91,6 +120,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
     required this.title,
     required this.elements,
     this.workId,
+    this.sharedReadAloud,
     super.key,
   });
 
@@ -102,6 +132,12 @@ class LocalTextReaderPage extends HookConsumerWidget {
 
   /// ローカルライブラリの作品ID。null の場合は読書位置を保存しない。
   final String? workId;
+
+  /// 親が用意した読み上げ（連続再生で次の作品へ進むときに使う）。
+  ///
+  /// null ならこの画面で作り、閉じるときに片付ける。
+  /// 親が用意したものは親が片付ける。
+  final ReadAloudController? sharedReadAloud;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,21 +157,19 @@ class LocalTextReaderPage extends HookConsumerWidget {
       () => SpeechDocument.fromElements(elements),
       [elements],
     );
-    final readAloud = useMemoized(
-      () => ReadAloudController(
-        document: document,
-        // 読み上げた位置を、次回「前回の続きから」読めるよう保存する
-        onPositionChanged: (segment) {
-          final id = workId;
-          if (id == null) return;
-          scheduleMicrotask(
-            () => positionsNotifier.record(id, ttsOffset: segment.start),
-          );
-        },
-      ),
-      [document],
+    final ownReadAloud = useMemoized(
+      () => sharedReadAloud == null
+          ? createLocalReadAloud(
+              document: document,
+              title: title,
+              workId: workId,
+              positions: positionsNotifier,
+            )
+          : null,
+      [document, sharedReadAloud],
     );
-    useEffect(() => readAloud.dispose, [readAloud]);
+    useEffect(() => ownReadAloud?.dispose, [ownReadAloud]);
+    final readAloud = sharedReadAloud ?? ownReadAloud!;
     useListenable(readAloud);
     useEffect(() {
       applyReadAloudSettings(readAloud, settingsValue);

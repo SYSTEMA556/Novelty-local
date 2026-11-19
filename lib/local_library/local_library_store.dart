@@ -296,6 +296,23 @@ class LocalLibraryStore {
     jsonEncode([for (final s in sources) s.toJson()]),
   );
 
+  File get _playlistFile => File(p.join(rootDir.path, 'playlist.json'));
+
+  /// 連続再生リスト（作品 ID を再生する順に並べたもの）。
+  Future<List<String>> loadPlaylist() async {
+    if (!_playlistFile.existsSync()) return [];
+    try {
+      final list = jsonDecode(await _playlistFile.readAsString()) as List;
+      return [for (final id in list) id as String];
+    } on FormatException {
+      return [];
+    }
+  }
+
+  /// 連続再生リストを保存する。
+  Future<void> savePlaylist(List<String> ids) =>
+      _writeAtomically(_playlistFile, jsonEncode(ids));
+
   /// フォルダを再スキャンの対象から外す（本棚の作品はそのまま）。
   Future<void> forgetSource(String path) async {
     final sources = await loadSources()
