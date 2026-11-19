@@ -198,6 +198,9 @@ class LocalImportResult {
     required this.added,
     required this.skipped,
     required this.failedFiles,
+    this.updated = 0,
+    this.missingIds = const [],
+    this.missingFolders = const [],
   });
 
   /// 追加した件数。
@@ -208,4 +211,30 @@ class LocalImportResult {
 
   /// 読み込めなかったファイル名（UTF-8でない等）。
   final List<String> failedFiles;
+
+  /// 元のファイルが書き換わっていたため、取り込み直した件数（再スキャン）。
+  final int updated;
+
+  /// 元のフォルダから消えていた作品のID（再スキャン。本棚からは消していない）。
+  final List<String> missingIds;
+
+  /// 見つからなかった（消された・名前が変わった）フォルダ（再スキャン）。
+  final List<String> missingFolders;
+
+  /// 結果をまとめる。
+  LocalImportResult operator +(LocalImportResult other) => LocalImportResult(
+    added: added + other.added,
+    skipped: skipped + other.skipped,
+    failedFiles: [...failedFiles, ...other.failedFiles],
+    updated: updated + other.updated,
+    missingIds: [...missingIds, ...other.missingIds],
+    missingFolders: [...missingFolders, ...other.missingFolders],
+  );
+
+  /// 何もしていない結果。
+  static const empty = LocalImportResult(
+    added: 0,
+    skipped: 0,
+    failedFiles: [],
+  );
 }

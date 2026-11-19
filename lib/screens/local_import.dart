@@ -27,6 +27,15 @@ Future<void> showLocalImportSheet(BuildContext context, WidgetRef ref) {
             },
           ),
           ListTile(
+            leading: const Icon(Icons.sync),
+            title: const Text('取り込んだフォルダを再スキャン'),
+            subtitle: const Text('増えたファイルを追加し、書き換わったファイルを取り込み直します'),
+            onTap: () async {
+              Navigator.pop(sheetContext);
+              await showRescanSheet(context, ref);
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.file_copy_outlined),
             title: const Text('ファイルを選んで取り込む'),
             subtitle: const Text('複数選択できます。権限の許可は不要です'),
@@ -71,7 +80,136 @@ Future<void> importFromFolder(BuildContext context, WidgetRef ref) async {
     if (context.mounted) _showSnackBar(context, 'このフォルダに .txt ファイルが見つかりませんでした');
     return;
   }
-  if (context.mounted) await _runImport(context, ref, paths);
+  // フォルダを覚えておき、あとで「再スキャン」できるようにする
+  if (context.mounted) {
+    await _runWithProgress(
+      context,
+      ref,
+      title: '取り込み中',
+      task: (onProgress) => ref
+          .read(localWorksProvider.notifier)
+          .scanFolder(dirPath, onProgress: onProgress),
+    );
+  }
+}
+
+/// 覚えているフォルダの一覧を出し、再スキャンする。
+Future<void> showRescanSheet(BuildContext context, WidgetRef ref) async {
+  final notifier = ref.read(localWorksProvider.notifier);
+  final sources = await notifier.sources();
+  if (!context.mounted) return;
+  if (sources.isEmpty) {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('再スキャンするフォルダがありません'),
+        content: const Text(
+          '「フォルダを選んで取り込む」で取り込んだフォルダを覚えておき、'
+          'あとから再スキャンできます。以前に取り込んだフォルダも、'
+          'もう一度選べば覚えます（取り込み済みの作品は重複しません）。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('閉じる'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await importFromFolder(context, ref);
+            },
+            child: const Text('フォルダを選ぶ'),
+          ),
+        ],
+      ),
+    );
+    return;
+  }
+
+  Future<void> rescan(
+    Future<LocalImportResult> Function(
+      void Function(int done, int total) onProgress,
+    )
+    task,
+  ) async {
+    if (!await _ensureStoragePermission()) {
+      if (context.mounted) {
+        _showSnackBar(context, 'ファイルへのアクセスが許可されませんでした');
+      }
+      return;
+    }
+    if (context.mounted) {
+      await _runWithProgress(context, ref, title: '再スキャン中', task: task);
+    }
+  }
+
+  await showModalBottomSheet<void>(
+    context: context,
+    useSafeArea: true,
+    isScrollControlled: true,
+    builder: (sheetContext) => SafeArea(
+      child: StatefulBuilder(
+        builder: (sheetContext, setState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.sync),
+              title: const Text('すべて再スキャン'),
+              subtitle: Text('${sources.length} 個のフォルダ'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                await rescan(
+                  (onProgress) => notifier.rescanAll(
+                    onProgress: (_, done, total) => onProgress(done, total),
+                  ),
+                );
+              },
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final path in sources)
+                    ListTile(
+                      leading: const Icon(Icons.folder_outlined),
+                      title: Text(
+                        path.split('/').where((e) => e.isNotEmpty).last,
+                      ),
+                      subtitle: Text(
+                        path,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await rescan(
+                          (onProgress) => notifier.scanFolder(
+                            path,
+                            onProgress: onProgress,
+                          ),
+                        );
+                      },
+                      trailing: IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'このフォルダを忘れる（作品は消えません）',
+                        onPressed: () async {
+                          await notifier.forgetSource(path);
+                          setState(() => sources.remove(path));
+                          if (sources.isEmpty && sheetContext.mounted) {
+                            Navigator.pop(sheetContext);
+                          }
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 /// ファイルを複数選んで取り込む。
@@ -90,7 +228,16 @@ Future<void> importFromFiles(BuildContext context, WidgetRef ref) async {
   ];
   if (paths.isEmpty) return;
 
-  if (context.mounted) await _runImport(context, ref, paths);
+  if (context.mounted) {
+    await _runWithProgress(
+      context,
+      ref,
+      title: '取り込み中',
+      task: (onProgress) => ref
+          .read(localWorksProvider.notifier)
+          .importFiles(paths, onProgress: onProgress),
+    );
+  }
   // FilePickerがコピーした一時ファイルは取り込み後に消す
   try {
     await FilePicker.platform.clearTemporaryFiles();
@@ -99,13 +246,17 @@ Future<void> importFromFiles(BuildContext context, WidgetRef ref) async {
   }
 }
 
-/// 進捗ダイアログを出しながら取り込み、結果を表示する。
-Future<void> _runImport(
+/// 進捗ダイアログを出しながら取り込み・再スキャンし、結果を表示する。
+Future<void> _runWithProgress(
   BuildContext context,
-  WidgetRef ref,
-  List<String> paths,
-) async {
-  final progress = ValueNotifier<(int, int)>((0, paths.length));
+  WidgetRef ref, {
+  required String title,
+  required Future<LocalImportResult> Function(
+    void Function(int done, int total) onProgress,
+  )
+  task,
+}) async {
+  final progress = ValueNotifier<(int, int)>((0, 0));
   unawaited(
     showDialog<void>(
       context: context,
@@ -113,7 +264,7 @@ Future<void> _runImport(
       builder: (_) => PopScope(
         canPop: false,
         child: AlertDialog(
-          title: const Text('取り込み中'),
+          title: Text(title),
           content: ValueListenableBuilder<(int, int)>(
             valueListenable: progress,
             builder: (context, value, _) {
@@ -136,12 +287,7 @@ Future<void> _runImport(
   LocalImportResult? result;
   Object? error;
   try {
-    result = await ref
-        .read(localWorksProvider.notifier)
-        .importFiles(
-          paths,
-          onProgress: (done, total) => progress.value = (done, total),
-        );
+    result = await task((done, total) => progress.value = (done, total));
   } on Object catch (e) {
     error = e;
   } finally {
@@ -154,23 +300,34 @@ Future<void> _runImport(
     _showSnackBar(context, '取り込みに失敗しました: $error');
     return;
   }
-  await _showResultDialog(context, result);
+  await _showResultDialog(context, ref, result);
 }
 
-Future<void> _showResultDialog(BuildContext context, LocalImportResult result) {
+Future<void> _showResultDialog(
+  BuildContext context,
+  WidgetRef ref,
+  LocalImportResult result,
+) {
   final failed = result.failedFiles;
+  final missing = result.missingIds;
   const maxShown = 20;
   return showDialog<void>(
     context: context,
     builder: (context) => AlertDialog(
-      title: const Text('取り込み完了'),
+      title: const Text('完了'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('追加：${result.added} 件'),
-            Text('取り込み済みのため省略：${result.skipped} 件'),
+            if (result.updated > 0)
+              Text('書き換わっていたため取り込み直し：${result.updated} 件'),
+            Text('変わりなし・取り込み済み：${result.skipped} 件'),
+            if (missing.isNotEmpty)
+              Text('元のフォルダから消えていた：${missing.length} 件（本棚には残しています）'),
+            for (final folder in result.missingFolders)
+              Text('見つからないフォルダ：$folder'),
             if (failed.isNotEmpty) ...[
               Text('読み込めなかった：${failed.length} 件（UTF-8以外の可能性）'),
               const SizedBox(height: 8),
@@ -183,6 +340,34 @@ Future<void> _showResultDialog(BuildContext context, LocalImportResult result) {
         ),
       ),
       actions: [
+        if (missing.isNotEmpty)
+          TextButton(
+            onPressed: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (c) => AlertDialog(
+                  title: Text('消えていた ${missing.length} 件を本棚から削除しますか？'),
+                  content: const Text('しおり・読書位置も一緒に消えます。'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(c, false),
+                      child: const Text('キャンセル'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(c, true),
+                      child: const Text('削除'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok != true) return;
+              await ref
+                  .read(localWorksProvider.notifier)
+                  .delete(missing.toSet());
+              if (context.mounted) Navigator.pop(context);
+            },
+            child: Text('消えた ${missing.length} 件を削除'),
+          ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('OK'),

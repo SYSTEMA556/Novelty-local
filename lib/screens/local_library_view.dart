@@ -314,9 +314,12 @@ class LocalLibraryView extends HookConsumerWidget {
                   unawaited(runRedetectAll(context, ref));
                 case 'display':
                   unawaited(showLocalDisplayDialog(context, ref));
+                case 'rescan':
+                  unawaited(showRescanSheet(context, ref));
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'rescan', child: Text('取り込んだフォルダを再スキャン')),
               PopupMenuItem(value: 'display', child: Text('表示の設定（リスト／グリッド）')),
               PopupMenuItem(value: 'rules', child: Text('作者の読み取りルール')),
               PopupMenuItem(value: 'redetect', child: Text('全作品の作者を再判定')),

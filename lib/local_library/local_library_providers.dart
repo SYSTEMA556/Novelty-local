@@ -44,6 +44,39 @@ class LocalWorksNotifier extends AsyncNotifier<List<LocalWork>> {
     return result;
   }
 
+  /// フォルダを取り込む・再スキャンする（フォルダは再スキャン用に覚えておく）。
+  Future<LocalImportResult> scanFolder(
+    String path, {
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    final result = await store.scanFolder(path, onProgress: onProgress);
+    state = AsyncData(await store.loadWorks());
+    return result;
+  }
+
+  /// 覚えているフォルダをすべて再スキャンする。
+  Future<LocalImportResult> rescanAll({
+    void Function(String folder, int done, int total)? onProgress,
+  }) async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    final result = await store.rescanAll(onProgress: onProgress);
+    state = AsyncData(await store.loadWorks());
+    return result;
+  }
+
+  /// 覚えているフォルダの一覧。
+  Future<List<String>> sources() async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    return [for (final s in await store.loadSources()) s.path];
+  }
+
+  /// フォルダを再スキャンの対象から外す。
+  Future<void> forgetSource(String path) async {
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.forgetSource(path);
+  }
+
   /// 手修正した作品を除き、全作品の作者を読み取り直す。変わった件数を返す。
   Future<int> redetectAll() async {
     final store = await ref.read(localLibraryStoreProvider.future);

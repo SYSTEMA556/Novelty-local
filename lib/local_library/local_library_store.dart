@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/author_profiles.dart';
+import 'package:novelty/local_library/folder_scan.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -274,6 +275,150 @@ class LocalLibraryStore {
     );
   }
 
+  File get _sourcesFile => File(p.join(rootDir.path, 'sources.json'));
+
+  /// 取り込んだフォルダの一覧（再スキャン用）。
+  Future<List<FolderSource>> loadSources() async {
+    if (!_sourcesFile.existsSync()) return [];
+    try {
+      final list = jsonDecode(await _sourcesFile.readAsString()) as List;
+      return [
+        for (final item in list)
+          FolderSource.fromJson(item as Map<String, dynamic>),
+      ];
+    } on FormatException {
+      return [];
+    }
+  }
+
+  Future<void> _saveSources(List<FolderSource> sources) => _writeAtomically(
+    _sourcesFile,
+    jsonEncode([for (final s in sources) s.toJson()]),
+  );
+
+  /// フォルダを再スキャンの対象から外す（本棚の作品はそのまま）。
+  Future<void> forgetSource(String path) async {
+    final sources = await loadSources()
+      ..removeWhere((s) => s.path == path);
+    await _saveSources(sources);
+  }
+
+  /// フォルダを取り込む・再スキャンする。
+  ///
+  /// - 本棚に無いファイルは追加する
+  /// - 前回から中身が変わったファイルは取り込み直す（しおりはそのまま。
+  ///   手で直した作者・作品名もそのまま）
+  /// - 前回あったのに消えたファイルは数えるだけで、本棚からは消さない
+  /// フォルダは再スキャンの対象として覚えておく。
+  Future<LocalImportResult> scanFolder(
+    String dirPath, {
+    void Function(int done, int total)? onProgress,
+    int batchSize = 100,
+  }) async {
+    if (!Directory(dirPath).existsSync()) {
+      return LocalImportResult(
+        added: 0,
+        skipped: 0,
+        failedFiles: const [],
+        missingFolders: [dirPath],
+      );
+    }
+    final sources = await loadSources();
+    final index = sources.indexWhere((s) => s.path == dirPath);
+    final previous = index < 0
+        ? const <String, String>{}
+        : sources[index].files;
+
+    final files = await _listFolderInBackground(dirPath);
+    final works = await loadWorks();
+    final plan = planScan(files, previous, {for (final w in works) w.id});
+    final total = plan.toAdd.length + plan.toUpdate.length;
+    onProgress?.call(0, total);
+
+    // 新しいファイルは、これまでの取り込みと同じ方法で追加する
+    final added = plan.toAdd.isEmpty
+        ? LocalImportResult.empty
+        : await importFiles(
+            [for (final f in plan.toAdd) f.path],
+            onProgress: (done, _) => onProgress?.call(done, total),
+            batchSize: batchSize,
+          );
+
+    // 中身が変わったファイルは本文を書き換え、文字数と作者・作品名を更新する
+    final failed = <String>[...added.failedFiles];
+    var updated = 0;
+    if (plan.toUpdate.isNotEmpty) {
+      final current = await loadWorks();
+      final byId = {for (var i = 0; i < current.length; i++) current[i].id: i};
+      final rules = await loadRules();
+      final textsPath = textsDir.path;
+      await textsDir.create(recursive: true);
+      for (var start = 0; start < plan.toUpdate.length; start += batchSize) {
+        final end = (start + batchSize).clamp(0, plan.toUpdate.length);
+        final batch = plan.toUpdate.sublist(start, end);
+        final result = await _updateTextsInBackground(batch, textsPath, rules);
+        failed.addAll(result.failed);
+        for (final u in result.updated) {
+          final i = byId[u.id];
+          if (i == null) continue;
+          final old = current[i];
+          current[i] = LocalWork(
+            id: old.id,
+            title: old.manualMeta ? old.title : u.meta.title,
+            fileName: old.fileName,
+            charCount: u.charCount,
+            addedAt: old.addedAt,
+            author: old.manualMeta ? old.author : u.meta.author,
+            manualMeta: old.manualMeta,
+            titleReading: old.titleReading,
+          );
+          updated++;
+        }
+        onProgress?.call(plan.toAdd.length + end, total);
+      }
+      if (updated > 0) await saveWorks(current);
+    }
+
+    // 読めなかったファイルは目印を記録しない（次のスキャンで試し直す）
+    final failedNames = failed.toSet();
+    final source = FolderSource(
+      path: dirPath,
+      files: {
+        for (final f in files)
+          if (!failedNames.contains(p.basename(f.path))) f.id: f.signature,
+      },
+      scannedAt: DateTime.now(),
+    );
+    if (index < 0) {
+      sources.add(source);
+    } else {
+      sources[index] = source;
+    }
+    await _saveSources(sources);
+
+    return LocalImportResult(
+      added: added.added,
+      skipped: plan.unchanged + added.skipped,
+      failedFiles: failed,
+      updated: updated,
+      missingIds: plan.missingIds,
+    );
+  }
+
+  /// 覚えているフォルダをすべて再スキャンする。
+  Future<LocalImportResult> rescanAll({
+    void Function(String folder, int done, int total)? onProgress,
+  }) async {
+    var result = LocalImportResult.empty;
+    for (final source in await loadSources()) {
+      result += await scanFolder(
+        source.path,
+        onProgress: (done, total) => onProgress?.call(source.path, done, total),
+      );
+    }
+    return result;
+  }
+
   /// 一時ファイルに書いてから置き換え、書き込み途中で壊れないようにする。
   static Future<void> _writeAtomically(File file, String contents) async {
     await file.parent.create(recursive: true);
@@ -285,6 +430,16 @@ class LocalLibraryStore {
 
 // Isolateへ渡すクロージャが呼び出し元の状態を巻き込まないよう、
 // 引数だけを受け取るトップレベル関数を経由する。
+Future<List<ScannedFile>> _listFolderInBackground(String dirPath) =>
+    Isolate.run(() => listFolder(dirPath));
+
+Future<({List<UpdatedText> updated, List<String> failed})>
+_updateTextsInBackground(
+  List<ScannedFile> files,
+  String textsDirPath,
+  MetaRuleSet rules,
+) => Isolate.run(() => updateTexts(files, textsDirPath, rules));
+
 Future<List<LocalWork>> _decodeWorksInBackground(String raw) =>
     Isolate.run(() => decodeWorks(raw));
 
