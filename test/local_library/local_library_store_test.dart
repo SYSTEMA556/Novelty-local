@@ -80,15 +80,23 @@ void main() {
       expect(await store.loadWorks(), hasLength(1));
     });
 
-    test('UTF-8でないファイルは失敗として報告し、他は取り込む', () async {
-      final bad = writeSource('sjis.txt', [0x94, 0x4C]);
+    test('Shift_JIS も取り込み、読めないファイルは失敗として報告する', () async {
+      // Shift_JIS の「猫」
+      final sjis = writeSource('sjis.txt', [0x94, 0x4C]);
+      // どの文字コードでも読めないバイト列（画像などの別物）
+      final bad = writeSource('bad.txt', [
+        for (var i = 0; i < 400; i++) [0x80, 0xFF, 0xFD][i % 3],
+      ]);
       final good = writeSource('ok.txt', utf8.encode('読める'));
 
-      final result = await store.importFiles([bad, good]);
+      final result = await store.importFiles([sjis, bad, good]);
 
-      expect(result.added, 1);
-      expect(result.failedFiles, ['sjis.txt']);
-      expect((await store.loadWorks()).single.fileName, 'ok.txt');
+      expect(result.added, 2);
+      expect(result.nonUtf8, 1);
+      expect(result.failedFiles, ['bad.txt']);
+      final works = await store.loadWorks();
+      final cat = works.firstWhere((w) => w.fileName == 'sjis.txt');
+      expect(await store.readText(cat.id), '猫');
     });
 
     test('バッチをまたいでも全件取り込み、進捗を通知する', () async {
