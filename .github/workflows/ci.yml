@@ -82,18 +82,30 @@ jobs:
       - name: Get Flutter packages
         run: flutter pub get
 
-      # CI用の使い捨てキーストアで release 署名する
+      # 署名の鍵（フォークで変更）。毎回作り直すと鍵が変わり、スマホに入っている
+      # アプリの上から入れられなくなる（「インストールできません」）ため、
+      # リポジトリの Secret「ANDROID_KEYSTORE_BASE64」に入れた鍵を毎回使う。
+      # Secret が無いときだけ、これまでどおりその場で作る（上書きはできない）。
       - name: Create signing config for CI
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          keytool -genkeypair \
-            -keystore android/app/ci-keystore.jks \
-            -storepass android -keypass android \
-            -alias androiddebugkey -keyalg RSA -keysize 2048 \
-            -validity 10000 -dname "CN=CI, O=Novelty, C=JP"
-          cat > android/app/key.properties <<'PROPS'
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/ci-keystore.jks
+            ALIAS=novelty
+          else
+            echo "::warning::Secret ANDROID_KEYSTORE_BASE64 がありません。その場で作った鍵で署名するため、前の版の上から入れられません。"
+            keytool -genkeypair \
+              -keystore android/app/ci-keystore.jks \
+              -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 \
+              -validity 10000 -dname "CN=CI, O=Novelty, C=JP"
+            ALIAS=androiddebugkey
+          fi
+          cat > android/app/key.properties <<PROPS
           storePassword=android
           keyPassword=android
-          keyAlias=androiddebugkey
+          keyAlias=$ALIAS
           storeFile=ci-keystore.jks
           PROPS
 
