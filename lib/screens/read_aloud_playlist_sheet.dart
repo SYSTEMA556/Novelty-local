@@ -80,13 +80,13 @@ class _PlaylistSheet extends ConsumerWidget {
             child: ReorderableListView.builder(
               scrollController: scrollController,
               itemCount: items.length,
-              onReorder: (oldIndex, newIndex) {
-                // 画面の並び（消えた作品を除いたもの）を、保存している並びに直す
-                final from = ids.indexOf(items[oldIndex].id);
-                final to = newIndex >= items.length
-                    ? ids.length
-                    : ids.indexOf(items[newIndex].id);
-                unawaited(notifier.move(from, to));
+              // newIndex は、動かした作品を抜いたあとの並びでの位置
+              onReorderItem: (oldIndex, newIndex) {
+                // 本棚から消えた作品はここで落とす
+                final order = [for (final w in items) w.id];
+                final moved = order.removeAt(oldIndex);
+                order.insert(newIndex.clamp(0, order.length), moved);
+                unawaited(notifier.reorder(order));
               },
               itemBuilder: (context, index) {
                 final work = items[index];

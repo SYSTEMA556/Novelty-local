@@ -65,7 +65,6 @@ class LocalWorkReaderPage extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final loaded = useState<_LoadedWork?>(null);
     final error = useState<Object?>(null);
-    final mounted = useIsMounted();
     // 最後に作った読み上げ（閉じるときに片付ける）
     final latest = useRef<ReadAloudController?>(null);
     useEffect(() => () => latest.value?.dispose(), const []);
@@ -86,7 +85,7 @@ class LocalWorkReaderPage extends HookConsumerWidget {
         final text = await store.readText(target.id);
         // 長編でもUIが固まらないよう別Isolateで解析する
         final elements = await parseInBackground(text);
-        if (!mounted()) return;
+        if (!context.mounted) return;
         final document = SpeechDocument.fromElements(elements);
         final controller = createLocalReadAloud(
           document: document,
@@ -109,7 +108,7 @@ class LocalWorkReaderPage extends HookConsumerWidget {
         if (start >= document.segments.length - 1) start = 0;
         await controller.playFrom(start);
       } on Object catch (e) {
-        if (mounted()) error.value = e;
+        if (context.mounted) error.value = e;
       }
     }
 

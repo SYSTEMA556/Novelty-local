@@ -57,15 +57,8 @@ class ReadAloudPlaylistNotifier extends AsyncNotifier<List<String>> {
     await _set([..._ids]..remove(id));
   }
 
-  /// 並べ替える（[ReorderableListView] の番号の数え方に合わせる）。
-  Future<void> move(int oldIndex, int newIndex) async {
-    final ids = [..._ids];
-    if (oldIndex < 0 || oldIndex >= ids.length) return;
-    final item = ids.removeAt(oldIndex);
-    final target = newIndex > oldIndex ? newIndex - 1 : newIndex;
-    ids.insert(target.clamp(0, ids.length), item);
-    await _set(ids);
-  }
+  /// 並べ替えたリストで置き換える。
+  Future<void> reorder(List<String> ids) => _set(ids);
 
   /// 空にする。
   Future<void> clear() => _set(const []);
