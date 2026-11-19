@@ -28,9 +28,42 @@ void main() {
       expect(PlainTextNovelParser.decode(bytes), '猫');
     });
 
-    test('UTF-8として不正なバイト列は例外を投げる', () {
-      // Shift_JIS の「猫」(0x94 0x4C)
-      final bytes = Uint8List.fromList([0x94, 0x4C]);
+    test('UTF-8 で読めなければ Shift_JIS として読む', () {
+      // 「車で物語を聴く。①ｶﾅ」の Shift_JIS（CP932）
+      final bytes = Uint8List.fromList([
+        142, 212, 130, 197, 149, 168, 140, 234, 130, 240, 146, 174, 130,
+        173, 129, 66, 135, 64, 182, 197,
+      ]);
+      final result = PlainTextNovelParser.decodeDetailed(bytes);
+      expect(result.text, '車で物語を聴く。①ｶﾅ');
+      expect(result.encoding, 'Shift_JIS');
+    });
+
+    test('EUC-JP も読み分ける', () {
+      // 「車で物語を聴く。ｶﾅ」の EUC-JP
+      final bytes = Uint8List.fromList([
+        188, 214, 164, 199, 202, 170, 184, 236, 164, 242, 196, 176, 164,
+        175, 161, 163, 142, 182, 142, 197,
+      ]);
+      final result = PlainTextNovelParser.decodeDetailed(bytes);
+      expect(result.text, '車で物語を聴く。ｶﾅ');
+      expect(result.encoding, 'EUC-JP');
+    });
+
+    test('BOM の無い UTF-16 も読む', () {
+      final bytes = Uint8List.fromList([
+        for (final unit in 'Hello, world. 車'.codeUnits) ...[
+          unit & 0xFF,
+          unit >> 8,
+        ],
+      ]);
+      expect(PlainTextNovelParser.decode(bytes), 'Hello, world. 車');
+    });
+
+    test('どの文字コードでもほとんど読めないものは例外を投げる', () {
+      final bytes = Uint8List.fromList([
+        for (var i = 0; i < 400; i++) [0x80, 0xFF, 0xFD][i % 3],
+      ]);
       expect(
         () => PlainTextNovelParser.decode(bytes),
         throwsA(isA<UnsupportedTextEncodingException>()),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:narou_parser/narou_parser.dart';
+import 'package:novelty/utils/japanese_legacy_codecs.dart';
 
 /// テキストファイルの文字コードを判別できなかったときに投げる例外。
 class UnsupportedTextEncodingException implements Exception {
@@ -10,7 +11,7 @@ class UnsupportedTextEncodingException implements Exception {
 
   @override
   String toString() =>
-      'このファイルの文字コードには対応していません。'
+      'このファイルの文字コードを判別できませんでした。'
       'UTF-8 で保存し直してから開いてください。';
 }
 
@@ -33,8 +34,54 @@ class PlainTextNovelParser {
   /// バイト列を文字列にデコードする。
   ///
   /// BOM付きUTF-8 / UTF-16（LE・BE）/ BOMなしUTF-8 に対応する。
-  /// いずれにも当てはまらない場合は [UnsupportedTextEncodingException] を投げる。
-  static String decode(Uint8List bytes) {
+  /// UTF-8 として読めなければ Shift_JIS・EUC-JP として読み、
+  /// 読めない所の少ないほうを選ぶ（フォークで追加）。
+  /// どれでもほとんど読めない場合は [UnsupportedTextEncodingException] を投げる。
+  static String decode(Uint8List bytes) => decodeDetailed(bytes).text;
+
+  /// [decode] と同じく読み、どの文字コードとして読んだかも返す。
+  static ({String text, String encoding}) decodeDetailed(Uint8List bytes) {
+    try {
+      return (text: _decodeUnicode(bytes), encoding: 'UTF-8');
+    } on UnsupportedTextEncodingException {
+      // 下で UTF-8 以外を試す
+    }
+    final bomless = _decodeBomlessUtf16(bytes);
+    if (bomless != null) return (text: bomless, encoding: 'UTF-16');
+    final sjis = decodeShiftJis(bytes);
+    final euc = decodeEucJp(bytes);
+    final best = euc.penalty < sjis.penalty ? euc : sjis;
+    // 読めない所が多すぎるなら、どちらでもない（画像などの別物）
+    if (best.errors > 16 && best.errors * 50 > bytes.length) {
+      throw const UnsupportedTextEncodingException();
+    }
+    return (
+      text: best.text,
+      encoding: identical(best, euc) ? 'EUC-JP' : 'Shift_JIS',
+    );
+  }
+
+  // BOM の無い UTF-16（半角が多い文章では、1バイトおきに 0 が並ぶ）
+  static String? _decodeBomlessUtf16(Uint8List bytes) {
+    if (bytes.length < 16) return null;
+    final sample = bytes.length < 4096 ? bytes.length : 4096;
+    var evenZeros = 0;
+    var oddZeros = 0;
+    for (var i = 0; i + 1 < sample; i += 2) {
+      if (bytes[i] == 0) evenZeros++;
+      if (bytes[i + 1] == 0) oddZeros++;
+    }
+    final pairs = sample ~/ 2;
+    if (oddZeros * 3 > pairs && evenZeros * 20 < pairs) {
+      return _decodeUtf16(bytes, littleEndian: true);
+    }
+    if (evenZeros * 3 > pairs && oddZeros * 20 < pairs) {
+      return _decodeUtf16(bytes, littleEndian: false);
+    }
+    return null;
+  }
+
+  static String _decodeUnicode(Uint8List bytes) {
     // UTF-8 BOM
     if (bytes.length >= 3 &&
         bytes[0] == 0xEF &&
