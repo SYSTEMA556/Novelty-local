@@ -31,7 +31,7 @@ class LegacyDecodeResult {
 }
 
 Uint16List _unpack(List<String> chunks) {
-  final bytes = const ZLibDecoder().convert(base64.decode(chunks.join()));
+  final bytes = ZLibDecoder().convert(base64.decode(chunks.join()));
   final data = ByteData.sublistView(Uint8List.fromList(bytes));
   return Uint16List.fromList([
     for (var i = 0; i + 1 < data.lengthInBytes; i += 2)

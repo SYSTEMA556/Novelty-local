@@ -42,7 +42,7 @@ class PlainTextNovelParser {
 
   /// [decode] と同じく読み、どの文字コードとして読んだかも返す。
   ///
-  /// [errors] は読めずに「�」にしたバイトの数（UTF-8・UTF-16 なら 0）。
+  /// errors は読めずに「�」にしたバイトの数（UTF-8・UTF-16 なら 0）。
   static ({String text, String encoding, int errors}) decodeDetailed(
     Uint8List bytes,
   ) {

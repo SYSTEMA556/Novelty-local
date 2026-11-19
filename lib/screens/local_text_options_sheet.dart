@@ -42,19 +42,23 @@ class _TextOptionsSheet extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const ListTile(
-              title: Text('テキストの読み込み設定'),
+            ListTile(
+              title: const Text('テキストの読み込み設定'),
               subtitle: Text(
-                'Shift_JIS・EUC-JP などの UTF-8 以外のファイルは、'
-                'この設定に関係なく読めます。',
+                [
+                  'Shift_JIS・EUC-JP などの UTF-8 以外のファイルは、',
+                  'この設定に関係なく読めます。',
+                ].join(),
               ),
             ),
             const Divider(height: 1),
             SwitchListTile(
               title: const Text('元のファイルを UTF-8 に書き直す'),
-              subtitle: const Text(
-                '取り込み・再スキャンのとき、UTF-8 以外の元のファイルを '
-                'UTF-8 で保存し直します。読めない文字があるファイルは書き直しません。',
+              subtitle: Text(
+                [
+                  '取り込み・再スキャンのとき、UTF-8 以外の元のファイルを ',
+                  'UTF-8 で保存し直します。読めない文字があるファイルは書き直しません。',
+                ].join(),
               ),
               value: options.convertSourceToUtf8,
               onChanged: (v) => unawaited(
@@ -76,9 +80,11 @@ class _TextOptionsSheet extends ConsumerWidget {
             const Divider(height: 1),
             SwitchListTile(
               title: const Text('本文の掃除'),
-              subtitle: const Text(
-                'HTML のタグや ［＃改ページ］ などの注記を消して表示します。'
-                '切ると、ファイルに書かれたとおりに出します。',
+              subtitle: Text(
+                [
+                  'HTML のタグや ［＃改ページ］ などの注記を消して表示します。',
+                  '切ると、ファイルに書かれたとおりに出します。',
+                ].join(),
               ),
               value: options.cleanMarkup,
               onChanged: (v) =>
@@ -86,9 +92,11 @@ class _TextOptionsSheet extends ConsumerWidget {
             ),
             SwitchListTile(
               title: const Text('表記ゆれをそろえる'),
-              subtitle: const Text(
-                '全角の英数字（Ａ１）を半角（A1）に、半角カナ（ｶﾞ）を全角（ガ）に'
-                'そろえます。「！」「？」や全角スペースはそのままです。',
+              subtitle: Text(
+                [
+                  '全角の英数字（Ａ１）を半角（A1）に、半角カナ（ｶﾞ）を全角（ガ）に',
+                  'そろえます。「！」「？」や全角スペースはそのままです。',
+                ].join(),
               ),
               value: options.unifyWidth,
               onChanged: (v) =>
@@ -97,9 +105,11 @@ class _TextOptionsSheet extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               child: Text(
-                '本文の掃除・表記ゆれは、次に作品を開いたときから反映されます。'
-                '元のファイルや本棚の中身は変えません。'
-                '切り替えると、しおりの位置が少しずれることがあります。',
+                [
+                  '本文の掃除・表記ゆれは、次に作品を開いたときから反映されます。',
+                  '元のファイルや本棚の中身は変えません。',
+                  '切り替えると、しおりの位置が少しずれることがあります。',
+                ].join(),
                 style: small,
               ),
             ),

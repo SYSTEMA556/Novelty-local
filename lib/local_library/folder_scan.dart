@@ -196,8 +196,9 @@ SourceText readSourceText(String path, {bool convertSource = false}) {
   if (nonUtf8 && convertSource && decoded.errors == 0) {
     final tmp = File('$path.utf8tmp');
     try {
-      tmp.writeAsStringSync(decoded.text, flush: true);
-      tmp.renameSync(path);
+      tmp
+        ..writeAsStringSync(decoded.text, flush: true)
+        ..renameSync(path);
       converted = true;
     } on Object {
       if (tmp.existsSync()) tmp.deleteSync();
@@ -267,7 +268,7 @@ typedef ConvertFolderResult = ({
 
 /// フォルダの中の UTF-8 以外の .txt を UTF-8 で書き直す（Isolate から呼ぶ）。
 ///
-/// [signatures] には、書き直したファイルの新しい目印（大きさ・日時）を入れる。
+/// 結果の signatures には、書き直したファイルの新しい目印（大きさ・日時）を入れる。
 /// 読めない文字があるファイルは書き直さない（[readSourceText]）。
 ConvertFolderResult convertFolderToUtf8(String dirPath) {
   var converted = 0;

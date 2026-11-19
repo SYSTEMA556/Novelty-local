@@ -56,8 +56,10 @@ Future<void> importFromFolder(BuildContext context, WidgetRef ref) async {
     if (context.mounted) {
       _showSnackBar(
         context,
-        'ファイルへのアクセスが許可されませんでした。'
-        '「ファイルを選んで取り込む」をお試しください',
+        [
+          'ファイルへのアクセスが許可されませんでした。',
+          '「ファイルを選んで取り込む」をお試しください',
+        ].join(),
       );
     }
     return;
@@ -103,10 +105,12 @@ Future<void> showRescanSheet(BuildContext context, WidgetRef ref) async {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('再スキャンするフォルダがありません'),
-        content: const Text(
-          '「フォルダを選んで取り込む」で取り込んだフォルダを覚えておき、'
-          'あとから再スキャンできます。以前に取り込んだフォルダも、'
-          'もう一度選べば覚えます（取り込み済みの作品は重複しません）。',
+        content: Text(
+          [
+            '「フォルダを選んで取り込む」で取り込んだフォルダを覚えておき、',
+            'あとから再スキャンできます。以前に取り込んだフォルダも、',
+            'もう一度選べば覚えます（取り込み済みの作品は重複しません）。',
+          ].join(),
         ),
         actions: [
           TextButton(
@@ -367,8 +371,10 @@ Future<void> _showResultDialog(
               Text('元のファイルを UTF-8 に書き直した：${result.converted} 件'),
             if (onlyConverted && result.converted < result.nonUtf8)
               Text(
-                '書き直さなかった ${result.nonUtf8 - result.converted} 件は、'
-                '読めない文字があるか、書き込めない場所のファイルです',
+                [
+                  '書き直さなかった ${result.nonUtf8 - result.converted} 件は、',
+                  '読めない文字があるか、書き込めない場所のファイルです',
+                ].join(),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             if (missing.isNotEmpty)
