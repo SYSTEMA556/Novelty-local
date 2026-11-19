@@ -201,6 +201,8 @@ class LocalImportResult {
     this.updated = 0,
     this.missingIds = const [],
     this.missingFolders = const [],
+    this.nonUtf8 = 0,
+    this.converted = 0,
   });
 
   /// 追加した件数。
@@ -221,6 +223,12 @@ class LocalImportResult {
   /// 見つからなかった（消された・名前が変わった）フォルダ（再スキャン）。
   final List<String> missingFolders;
 
+  /// UTF-8 以外（Shift_JIS など）として読んだ件数。
+  final int nonUtf8;
+
+  /// そのうち、元のファイルを UTF-8 に書き直した件数。
+  final int converted;
+
   /// 結果をまとめる。
   LocalImportResult operator +(LocalImportResult other) => LocalImportResult(
     added: added + other.added,
@@ -229,6 +237,8 @@ class LocalImportResult {
     updated: updated + other.updated,
     missingIds: [...missingIds, ...other.missingIds],
     missingFolders: [...missingFolders, ...other.missingFolders],
+    nonUtf8: nonUtf8 + other.nonUtf8,
+    converted: converted + other.converted,
   );
 
   /// 何もしていない結果。
@@ -237,4 +247,61 @@ class LocalImportResult {
     skipped: 0,
     failedFiles: [],
   );
+}
+
+/// テキストの読み込み方の設定（フォークで追加）。
+@immutable
+class LocalTextOptions {
+  /// コンストラクタ。
+  const LocalTextOptions({
+    this.convertSourceToUtf8 = false,
+    this.cleanMarkup = true,
+    this.unifyWidth = false,
+  });
+
+  /// JSONから生成する。
+  factory LocalTextOptions.fromJson(Map<String, dynamic> json) {
+    return LocalTextOptions(
+      convertSourceToUtf8: json['convertSourceToUtf8'] as bool? ?? false,
+      cleanMarkup: json['cleanMarkup'] as bool? ?? true,
+      unifyWidth: json['unifyWidth'] as bool? ?? false,
+    );
+  }
+
+  /// 取り込むとき、UTF-8 以外の元のファイルを UTF-8 で書き直すか。
+  final bool convertSourceToUtf8;
+
+  /// 読むとき、HTML のタグや青空文庫の注記を消すか。
+  final bool cleanMarkup;
+
+  /// 読むとき、全角英数字を半角に、半角カナを全角にそろえるか。
+  final bool unifyWidth;
+
+  /// JSONに変換する。
+  Map<String, dynamic> toJson() => {
+    'convertSourceToUtf8': convertSourceToUtf8,
+    'cleanMarkup': cleanMarkup,
+    'unifyWidth': unifyWidth,
+  };
+
+  /// 一部を変えた設定を作る。
+  LocalTextOptions copyWith({
+    bool? convertSourceToUtf8,
+    bool? cleanMarkup,
+    bool? unifyWidth,
+  }) => LocalTextOptions(
+    convertSourceToUtf8: convertSourceToUtf8 ?? this.convertSourceToUtf8,
+    cleanMarkup: cleanMarkup ?? this.cleanMarkup,
+    unifyWidth: unifyWidth ?? this.unifyWidth,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is LocalTextOptions &&
+      other.convertSourceToUtf8 == convertSourceToUtf8 &&
+      other.cleanMarkup == cleanMarkup &&
+      other.unifyWidth == unifyWidth;
+
+  @override
+  int get hashCode => Object.hash(convertSourceToUtf8, cleanMarkup, unifyWidth);
 }

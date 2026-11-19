@@ -8,7 +8,6 @@ import 'package:novelty/local_library/folder_scan.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
-import 'package:novelty/utils/plain_text_novel_parser.dart';
 import 'package:path/path.dart' as p;
 
 /// ローカルライブラリの保存先を管理するストア。
@@ -234,11 +233,14 @@ class LocalLibraryStore {
     await textsDir.create(recursive: true);
     final works = await loadWorks();
     final rules = await loadRules();
+    final convert = (await loadTextOptions()).convertSourceToUtf8;
     final knownIds = {for (final w in works) w.id};
     final textsPath = textsDir.path;
 
     var added = 0;
     var skipped = 0;
+    var nonUtf8 = 0;
+    var converted = 0;
     final failed = <String>[];
 
     for (var start = 0; start < paths.length; start += batchSize) {
@@ -250,10 +252,13 @@ class LocalLibraryStore {
         textsPath,
         known,
         rules,
+        convertSource: convert,
       );
 
       for (final result in results) {
         final work = result.work;
+        if (result.nonUtf8) nonUtf8++;
+        if (result.converted) converted++;
         if (work != null) {
           works.add(work);
           knownIds.add(work.id);
@@ -272,6 +277,8 @@ class LocalLibraryStore {
       added: added,
       skipped: skipped,
       failedFiles: failed,
+      nonUtf8: nonUtf8,
+      converted: converted,
     );
   }
 
@@ -295,6 +302,26 @@ class LocalLibraryStore {
     _sourcesFile,
     jsonEncode([for (final s in sources) s.toJson()]),
   );
+
+  File get _textOptionsFile =>
+      File(p.join(rootDir.path, 'text_options.json'));
+
+  /// テキストの読み込み方の設定。
+  Future<LocalTextOptions> loadTextOptions() async {
+    if (!_textOptionsFile.existsSync()) return const LocalTextOptions();
+    try {
+      return LocalTextOptions.fromJson(
+        jsonDecode(await _textOptionsFile.readAsString())
+            as Map<String, dynamic>,
+      );
+    } on FormatException {
+      return const LocalTextOptions();
+    }
+  }
+
+  /// テキストの読み込み方の設定を保存する。
+  Future<void> saveTextOptions(LocalTextOptions options) =>
+      _writeAtomically(_textOptionsFile, jsonEncode(options.toJson()));
 
   File get _playlistFile => File(p.join(rootDir.path, 'playlist.json'));
 
@@ -364,17 +391,27 @@ class LocalLibraryStore {
     // 中身が変わったファイルは本文を書き換え、文字数と作者・作品名を更新する
     final failed = <String>[...added.failedFiles];
     var updated = 0;
+    var nonUtf8 = added.nonUtf8;
+    var converted = added.converted;
     if (plan.toUpdate.isNotEmpty) {
       final current = await loadWorks();
       final byId = {for (var i = 0; i < current.length; i++) current[i].id: i};
       final rules = await loadRules();
       final textsPath = textsDir.path;
       await textsDir.create(recursive: true);
+      final convert = (await loadTextOptions()).convertSourceToUtf8;
       for (var start = 0; start < plan.toUpdate.length; start += batchSize) {
         final end = (start + batchSize).clamp(0, plan.toUpdate.length);
         final batch = plan.toUpdate.sublist(start, end);
-        final result = await _updateTextsInBackground(batch, textsPath, rules);
+        final result = await _updateTextsInBackground(
+          batch,
+          textsPath,
+          rules,
+          convertSource: convert,
+        );
         failed.addAll(result.failed);
+        nonUtf8 += result.nonUtf8;
+        converted += result.converted;
         for (final u in result.updated) {
           final i = byId[u.id];
           if (i == null) continue;
@@ -398,11 +435,24 @@ class LocalLibraryStore {
 
     // 読めなかったファイルは目印を記録しない（次のスキャンで試し直す）
     final failedNames = failed.toSet();
+    // UTF-8 に書き直したファイルは大きさ・日時が変わるので、目印を測り直す
+    final touched = converted == 0
+        ? const <String>{}
+        : {for (final f in [...plan.toAdd, ...plan.toUpdate]) f.path};
+    String signatureOf(ScannedFile f) {
+      if (!touched.contains(f.path)) return f.signature;
+      try {
+        return fileSignature(File(f.path).statSync());
+      } on Object {
+        return f.signature;
+      }
+    }
+
     final source = FolderSource(
       path: dirPath,
       files: {
         for (final f in files)
-          if (!failedNames.contains(p.basename(f.path))) f.id: f.signature,
+          if (!failedNames.contains(p.basename(f.path))) f.id: signatureOf(f),
       },
       scannedAt: DateTime.now(),
     );
@@ -419,7 +469,42 @@ class LocalLibraryStore {
       failedFiles: failed,
       updated: updated,
       missingIds: plan.missingIds,
+      nonUtf8: nonUtf8,
+      converted: converted,
     );
+  }
+
+  /// 覚えているフォルダにある UTF-8 以外の元のファイルを、UTF-8 で書き直す。
+  ///
+  /// 本棚の中身はすでに UTF-8 なので変わらない。書き直したファイルの目印は
+  /// 測り直すので、次の再スキャンで「書き換わった」とは扱わない。
+  Future<({int converted, int nonUtf8})> convertSourcesToUtf8({
+    void Function(int done, int total)? onProgress,
+  }) async {
+    final sources = await loadSources();
+    var converted = 0;
+    var nonUtf8 = 0;
+    onProgress?.call(0, sources.length);
+    for (var i = 0; i < sources.length; i++) {
+      final source = sources[i];
+      if (Directory(source.path).existsSync()) {
+        final result = await _convertFolderInBackground(source.path);
+        converted += result.converted;
+        nonUtf8 += result.nonUtf8;
+        sources[i] = FolderSource(
+          path: source.path,
+          files: {
+            ...source.files,
+            for (final e in result.signatures.entries)
+              if (source.files.containsKey(e.key)) e.key: e.value,
+          },
+          scannedAt: source.scannedAt,
+        );
+      }
+      onProgress?.call(i + 1, sources.length);
+    }
+    await _saveSources(sources);
+    return (converted: converted, nonUtf8: nonUtf8);
   }
 
   /// 覚えているフォルダをすべて再スキャンする。
@@ -450,12 +535,22 @@ class LocalLibraryStore {
 Future<List<ScannedFile>> _listFolderInBackground(String dirPath) =>
     Isolate.run(() => listFolder(dirPath));
 
-Future<({List<UpdatedText> updated, List<String> failed})>
-_updateTextsInBackground(
+Future<UpdateTextsResult> _updateTextsInBackground(
   List<ScannedFile> files,
   String textsDirPath,
-  MetaRuleSet rules,
-) => Isolate.run(() => updateTexts(files, textsDirPath, rules));
+  MetaRuleSet rules, {
+  required bool convertSource,
+}) => Isolate.run(
+  () => updateTexts(
+    files,
+    textsDirPath,
+    rules,
+    convertSource: convertSource,
+  ),
+);
+
+Future<ConvertFolderResult> _convertFolderInBackground(String dirPath) =>
+    Isolate.run(() => convertFolderToUtf8(dirPath));
 
 Future<List<LocalWork>> _decodeWorksInBackground(String raw) =>
     Isolate.run(() => decodeWorks(raw));
@@ -476,9 +571,16 @@ Future<List<ImportItemResult>> _importBatchInBackground(
   List<String> paths,
   String textsDirPath,
   Set<String> knownIds,
-  MetaRuleSet rules,
-) => Isolate.run(
-  () => importBatch(paths, textsDirPath, knownIds, rules: rules),
+  MetaRuleSet rules, {
+  required bool convertSource,
+}) => Isolate.run(
+  () => importBatch(
+    paths,
+    textsDirPath,
+    knownIds,
+    rules: rules,
+    convertSource: convertSource,
+  ),
 );
 
 /// 作品一覧のJSONを解析する（Isolateから呼び出す）。
@@ -494,19 +596,36 @@ List<LocalWork> decodeWorks(String raw) {
 @immutable
 class ImportItemResult {
   /// 追加できた場合。
-  const ImportItemResult.added(LocalWork this.work) : failedFileName = null;
+  const ImportItemResult.added(
+    LocalWork this.work, {
+    this.nonUtf8 = false,
+    this.converted = false,
+  }) : failedFileName = null;
 
   /// 取り込み済みのため飛ばした場合。
-  const ImportItemResult.skipped() : work = null, failedFileName = null;
+  const ImportItemResult.skipped()
+    : work = null,
+      failedFileName = null,
+      nonUtf8 = false,
+      converted = false;
 
   /// 読み込めなかった場合。
-  const ImportItemResult.failed(String this.failedFileName) : work = null;
+  const ImportItemResult.failed(String this.failedFileName)
+    : work = null,
+      nonUtf8 = false,
+      converted = false;
 
   /// 追加した作品。
   final LocalWork? work;
 
   /// 読み込めなかったファイル名。
   final String? failedFileName;
+
+  /// UTF-8 以外として読んだか。
+  final bool nonUtf8;
+
+  /// 元のファイルを UTF-8 に書き直したか。
+  final bool converted;
 }
 
 /// テキストファイル群を読み込み、本文を保存先へコピーする。
@@ -519,6 +638,7 @@ List<ImportItemResult> importBatch(
   String textsDirPath,
   Set<String> knownIds, {
   MetaRuleSet rules = MetaRuleSet.defaults,
+  bool convertSource = false,
 }) {
   final now = DateTime.now();
   final results = <ImportItemResult>[];
@@ -530,7 +650,8 @@ List<ImportItemResult> importBatch(
       continue;
     }
     try {
-      final text = PlainTextNovelParser.decode(File(path).readAsBytesSync());
+      final source = readSourceText(path, convertSource: convertSource);
+      final text = source.text;
       File(p.join(textsDirPath, '$id.txt')).writeAsStringSync(text);
       final meta = WorkMetaDetector.detect(
         fileName: fileName,
@@ -547,6 +668,8 @@ List<ImportItemResult> importBatch(
             charCount: text.length,
             addedAt: now,
           ),
+          nonUtf8: source.nonUtf8,
+          converted: source.converted,
         ),
       );
     } on Object {

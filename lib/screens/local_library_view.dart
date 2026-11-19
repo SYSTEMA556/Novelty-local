@@ -14,6 +14,7 @@ import 'package:novelty/screens/local_author_works_page.dart';
 import 'package:novelty/screens/local_bookmarks_page.dart';
 import 'package:novelty/screens/local_import.dart';
 import 'package:novelty/screens/local_meta_rules_page.dart';
+import 'package:novelty/screens/local_text_options_sheet.dart';
 import 'package:novelty/screens/local_work_reader_page.dart';
 import 'package:novelty/screens/read_aloud_playlist_sheet.dart';
 import 'package:novelty/utils/settings_provider.dart';
@@ -316,6 +317,8 @@ class LocalLibraryView extends HookConsumerWidget {
                   unawaited(runRedetectAll(context, ref));
                 case 'display':
                   unawaited(showLocalDisplayDialog(context, ref));
+                case 'text':
+                  unawaited(showLocalTextOptionsSheet(context, ref));
                 case 'playlist':
                   unawaited(showReadAloudPlaylistSheet(context));
                 case 'rescan':
@@ -326,6 +329,7 @@ class LocalLibraryView extends HookConsumerWidget {
               PopupMenuItem(value: 'playlist', child: Text('連続再生リスト')),
               PopupMenuItem(value: 'rescan', child: Text('取り込んだフォルダを再スキャン')),
               PopupMenuItem(value: 'display', child: Text('表示の設定（リスト／グリッド）')),
+              PopupMenuItem(value: 'text', child: Text('テキストの読み込み設定')),
               PopupMenuItem(value: 'rules', child: Text('作者の読み取りルール')),
               PopupMenuItem(value: 'redetect', child: Text('全作品の作者を再判定')),
             ],

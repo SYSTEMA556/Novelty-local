@@ -255,6 +255,8 @@ Future<void> _runWithProgress(
     void Function(int done, int total) onProgress,
   )
   task,
+  String unit = '件',
+  bool convertOnly = false,
 }) async {
   final progress = ValueNotifier<(int, int)>((0, 0));
   unawaited(
@@ -274,7 +276,7 @@ Future<void> _runWithProgress(
                 children: [
                   LinearProgressIndicator(value: total == 0 ? 0 : done / total),
                   const SizedBox(height: 12),
-                  Text('$done / $total 件'),
+                  Text('$done / $total $unit'),
                 ],
               );
             },
@@ -300,16 +302,48 @@ Future<void> _runWithProgress(
     _showSnackBar(context, '取り込みに失敗しました: $error');
     return;
   }
-  await _showResultDialog(context, ref, result);
+  await _showResultDialog(context, ref, result, convertOnly: convertOnly);
+}
+
+/// 覚えているフォルダにある UTF-8 以外の元のファイルを、UTF-8 で書き直す。
+Future<void> convertSourcesToUtf8(BuildContext context, WidgetRef ref) async {
+  final store = await ref.read(localLibraryStoreProvider.future);
+  if (!context.mounted) return;
+  if ((await store.loadSources()).isEmpty) {
+    if (context.mounted) {
+      _showSnackBar(context, 'フォルダから取り込んだ作品がありません');
+    }
+    return;
+  }
+  if (!await _ensureStoragePermission() || !context.mounted) return;
+  await _runWithProgress(
+    context,
+    ref,
+    title: '元のファイルを UTF-8 に書き直しています',
+    unit: 'フォルダ',
+    convertOnly: true,
+    task: (onProgress) async {
+      final r = await store.convertSourcesToUtf8(onProgress: onProgress);
+      return LocalImportResult(
+        added: 0,
+        skipped: 0,
+        failedFiles: const [],
+        nonUtf8: r.nonUtf8,
+        converted: r.converted,
+      );
+    },
+  );
 }
 
 Future<void> _showResultDialog(
   BuildContext context,
   WidgetRef ref,
-  LocalImportResult result,
-) {
+  LocalImportResult result, {
+  bool convertOnly = false,
+}) {
   final failed = result.failedFiles;
   final missing = result.missingIds;
+  final onlyConverted = convertOnly;
   const maxShown = 20;
   return showDialog<void>(
     context: context,
@@ -320,16 +354,29 @@ Future<void> _showResultDialog(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('追加：${result.added} 件'),
-            if (result.updated > 0)
-              Text('書き換わっていたため取り込み直し：${result.updated} 件'),
-            Text('変わりなし・取り込み済み：${result.skipped} 件'),
+            // 文字コードの変換だけをしたときは、取り込みの件数は出さない
+            if (!onlyConverted) ...[
+              Text('追加：${result.added} 件'),
+              if (result.updated > 0)
+                Text('書き換わっていたため取り込み直し：${result.updated} 件'),
+              Text('変わりなし・取り込み済み：${result.skipped} 件'),
+            ],
+            if (result.nonUtf8 > 0 || onlyConverted)
+              Text('UTF-8 以外（Shift_JIS など）として読んだ：${result.nonUtf8} 件'),
+            if (result.converted > 0 || onlyConverted)
+              Text('元のファイルを UTF-8 に書き直した：${result.converted} 件'),
+            if (onlyConverted && result.converted < result.nonUtf8)
+              Text(
+                '書き直さなかった ${result.nonUtf8 - result.converted} 件は、'
+                '読めない文字があるか、書き込めない場所のファイルです',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             if (missing.isNotEmpty)
               Text('元のフォルダから消えていた：${missing.length} 件（本棚には残しています）'),
             for (final folder in result.missingFolders)
               Text('見つからないフォルダ：$folder'),
             if (failed.isNotEmpty) ...[
-              Text('読み込めなかった：${failed.length} 件（UTF-8以外の可能性）'),
+              Text('読み込めなかった：${failed.length} 件（文字コードを判別できない等）'),
               const SizedBox(height: 8),
               for (final name in failed.take(maxShown))
                 Text('・$name', style: Theme.of(context).textTheme.bodySmall),

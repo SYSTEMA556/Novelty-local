@@ -83,8 +83,9 @@ class LocalWorkReaderPage extends HookConsumerWidget {
         // 読書位置を先に読み込んでおく（復元に必要）
         final saved = await ref.read(readingPositionsProvider.future);
         final text = await store.readText(target.id);
+        final options = await ref.read(localTextOptionsProvider.future);
         // 長編でもUIが固まらないよう別Isolateで解析する
-        final elements = await parseInBackground(text);
+        final elements = await parseInBackground(text, options: options);
         if (!context.mounted) return;
         final document = SpeechDocument.fromElements(elements);
         final controller = createLocalReadAloud(
@@ -155,6 +156,19 @@ class LocalWorkReaderPage extends HookConsumerWidget {
 ///
 /// Isolateへ渡すクロージャが画面の状態（ref や context）を
 /// 巻き込まないよう、引数だけを受け取るトップレベル関数にしている。
-Future<List<NovelContentElement>> parseInBackground(String text) {
-  return Isolate.run(() => PlainTextNovelParser.parse(text));
+///
+/// [options] で、本文の掃除と表記ゆれをそろえるかを決める。
+Future<List<NovelContentElement>> parseInBackground(
+  String text, {
+  LocalTextOptions options = const LocalTextOptions(),
+}) {
+  final clean = options.cleanMarkup;
+  final unifyWidth = options.unifyWidth;
+  return Isolate.run(
+    () => PlainTextNovelParser.parse(
+      text,
+      clean: clean,
+      unifyWidth: unifyWidth,
+    ),
+  );
 }

@@ -255,3 +255,25 @@ double _clamp01(double value) {
   if (value > 1) return 1;
   return value;
 }
+
+/// テキストの読み込み方の設定（文字コードの変換・本文の掃除・表記ゆれ）。
+final localTextOptionsProvider =
+    AsyncNotifierProvider<LocalTextOptionsNotifier, LocalTextOptions>(
+      LocalTextOptionsNotifier.new,
+    );
+
+/// テキストの読み込み方の設定を管理する。
+class LocalTextOptionsNotifier extends AsyncNotifier<LocalTextOptions> {
+  @override
+  Future<LocalTextOptions> build() async {
+    final store = await ref.watch(localLibraryStoreProvider.future);
+    return store.loadTextOptions();
+  }
+
+  /// 設定を変えて保存する。
+  Future<void> save(LocalTextOptions options) async {
+    state = AsyncData(options);
+    final store = await ref.read(localLibraryStoreProvider.future);
+    await store.saveTextOptions(options);
+  }
+}

@@ -179,22 +179,61 @@ class UpdatedText {
   final WorkMeta meta;
 }
 
+/// 元のファイルを読んだ結果。
+typedef SourceText = ({String text, bool nonUtf8, bool converted});
+
+/// 元のファイルを読む（UTF-8 以外の文字コードも読む）。
+///
+/// [convertSource] なら、UTF-8 以外のファイルを UTF-8 で書き直す
+/// （読めない文字が1つでもあるときは、元の中身を失わないよう書き直さない。
+/// 書き込めない場所のファイルもそのまま）。
+SourceText readSourceText(String path, {bool convertSource = false}) {
+  final decoded = PlainTextNovelParser.decodeDetailed(
+    File(path).readAsBytesSync(),
+  );
+  final nonUtf8 = decoded.encoding != 'UTF-8';
+  var converted = false;
+  if (nonUtf8 && convertSource && decoded.errors == 0) {
+    final tmp = File('$path.utf8tmp');
+    try {
+      tmp.writeAsStringSync(decoded.text, flush: true);
+      tmp.renameSync(path);
+      converted = true;
+    } on Object {
+      if (tmp.existsSync()) tmp.deleteSync();
+    }
+  }
+  return (text: decoded.text, nonUtf8: nonUtf8, converted: converted);
+}
+
+/// [updateTexts] の結果。
+typedef UpdateTextsResult = ({
+  List<UpdatedText> updated,
+  List<String> failed,
+  int nonUtf8,
+  int converted,
+});
+
 /// 中身が変わったファイルを読み直して本文を書き換える（Isolate から呼ぶ）。
 ///
 /// 読めなかったファイルは failed にファイル名を入れて返す。
-({List<UpdatedText> updated, List<String> failed}) updateTexts(
+UpdateTextsResult updateTexts(
   List<ScannedFile> files,
   String textsDirPath,
-  MetaRuleSet rules,
-) {
+  MetaRuleSet rules, {
+  bool convertSource = false,
+}) {
   final results = <UpdatedText>[];
   final failed = <String>[];
+  var nonUtf8 = 0;
+  var converted = 0;
   for (final file in files) {
     final fileName = p.basename(file.path);
     try {
-      final text = PlainTextNovelParser.decode(
-        File(file.path).readAsBytesSync(),
-      );
+      final source = readSourceText(file.path, convertSource: convertSource);
+      final text = source.text;
+      if (source.nonUtf8) nonUtf8++;
+      if (source.converted) converted++;
       File(p.join(textsDirPath, '${file.id}.txt')).writeAsStringSync(text);
       results.add(
         UpdatedText(
@@ -211,5 +250,39 @@ class UpdatedText {
       failed.add(fileName);
     }
   }
-  return (updated: results, failed: failed);
+  return (
+    updated: results,
+    failed: failed,
+    nonUtf8: nonUtf8,
+    converted: converted,
+  );
+}
+
+/// [convertFolderToUtf8] の結果。
+typedef ConvertFolderResult = ({
+  int converted,
+  int nonUtf8,
+  Map<String, String> signatures,
+});
+
+/// フォルダの中の UTF-8 以外の .txt を UTF-8 で書き直す（Isolate から呼ぶ）。
+///
+/// [signatures] には、書き直したファイルの新しい目印（大きさ・日時）を入れる。
+/// 読めない文字があるファイルは書き直さない（[readSourceText]）。
+ConvertFolderResult convertFolderToUtf8(String dirPath) {
+  var converted = 0;
+  var nonUtf8 = 0;
+  final signatures = <String, String>{};
+  for (final file in listFolder(dirPath)) {
+    try {
+      final result = readSourceText(file.path, convertSource: true);
+      if (result.nonUtf8) nonUtf8++;
+      if (!result.converted) continue;
+      converted++;
+      signatures[file.id] = fileSignature(File(file.path).statSync());
+    } on Object {
+      // 読めないファイルはそのまま
+    }
+  }
+  return (converted: converted, nonUtf8: nonUtf8, signatures: signatures);
 }

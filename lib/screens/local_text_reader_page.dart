@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
+import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
@@ -44,9 +45,21 @@ Future<void> openLocalTextFile(BuildContext context) async {
     return;
   }
 
+  // 本文の掃除・表記ゆれの設定は本棚と同じものを使う
+  if (!context.mounted) return;
+  final options = await ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(localTextOptionsProvider.future).catchError(
+    (Object _) => const LocalTextOptions(),
+  );
   final List<NovelContentElement> elements;
   try {
-    elements = PlainTextNovelParser.parse(PlainTextNovelParser.decode(bytes));
+    elements = PlainTextNovelParser.parse(
+      PlainTextNovelParser.decode(bytes),
+      clean: options.cleanMarkup,
+      unifyWidth: options.unifyWidth,
+    );
   } on UnsupportedTextEncodingException catch (e) {
     if (context.mounted) _showError(context, e.toString());
     return;

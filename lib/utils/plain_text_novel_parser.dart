@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/utils/japanese_legacy_codecs.dart';
+import 'package:novelty/utils/text_width.dart';
 
 /// テキストファイルの文字コードを判別できなかったときに投げる例外。
 class UnsupportedTextEncodingException implements Exception {
@@ -40,14 +41,28 @@ class PlainTextNovelParser {
   static String decode(Uint8List bytes) => decodeDetailed(bytes).text;
 
   /// [decode] と同じく読み、どの文字コードとして読んだかも返す。
-  static ({String text, String encoding}) decodeDetailed(Uint8List bytes) {
+  ///
+  /// [errors] は読めずに「�」にしたバイトの数（UTF-8・UTF-16 なら 0）。
+  static ({String text, String encoding, int errors}) decodeDetailed(
+    Uint8List bytes,
+  ) {
+    final hasUtf16Bom =
+        bytes.length >= 2 &&
+        ((bytes[0] == 0xFF && bytes[1] == 0xFE) ||
+            (bytes[0] == 0xFE && bytes[1] == 0xFF));
     try {
-      return (text: _decodeUnicode(bytes), encoding: 'UTF-8');
+      return (
+        text: _decodeUnicode(bytes),
+        encoding: hasUtf16Bom ? 'UTF-16' : 'UTF-8',
+        errors: 0,
+      );
     } on UnsupportedTextEncodingException {
       // 下で UTF-8 以外を試す
     }
     final bomless = _decodeBomlessUtf16(bytes);
-    if (bomless != null) return (text: bomless, encoding: 'UTF-16');
+    if (bomless != null) {
+      return (text: bomless, encoding: 'UTF-16', errors: 0);
+    }
     final sjis = decodeShiftJis(bytes);
     final euc = decodeEucJp(bytes);
     final best = euc.penalty < sjis.penalty ? euc : sjis;
@@ -58,6 +73,7 @@ class PlainTextNovelParser {
     return (
       text: best.text,
       encoding: identical(best, euc) ? 'EUC-JP' : 'Shift_JIS',
+      errors: best.errors,
     );
   }
 
@@ -201,9 +217,18 @@ class PlainTextNovelParser {
 
   /// テキストを本文要素のリストに変換する。
   ///
-  /// 先に [cleanMarkup] で HTML のタグや青空文庫の注記を取り除く。
-  static List<NovelContentElement> parse(String text) {
-    final normalized = cleanMarkup(text);
+  /// [clean] なら、先に [cleanMarkup] で HTML のタグや青空文庫の注記を取り除く。
+  /// [unifyWidth] なら、全角英数字を半角に、半角カナを全角にそろえる
+  /// （[unifyTextWidth]）。
+  static List<NovelContentElement> parse(
+    String text, {
+    bool clean = true,
+    bool unifyWidth = false,
+  }) {
+    final widened = unifyWidth ? unifyTextWidth(text) : text;
+    final normalized = clean
+        ? cleanMarkup(widened)
+        : widened.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final lines = normalized.split('\n');
     // 末尾の改行による空行は表示しない
     while (lines.isNotEmpty && lines.last.isEmpty) {

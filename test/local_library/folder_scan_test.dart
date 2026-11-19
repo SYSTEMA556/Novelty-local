@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novelty/local_library/folder_scan.dart';
+import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_store.dart';
 import 'package:path/path.dart' as p;
 
@@ -107,5 +108,70 @@ void main() {
       expect(await store.loadSources(), isEmpty);
       expect(await store.loadWorks(), hasLength(1));
     });
+  });
+
+  group('UTF-8 以外の文字コード', encodingTests);
+}
+
+// 「車の物語。」の Shift_JIS
+const _sjisBytes = [142, 212, 130, 204, 149, 168, 140, 234, 129, 66];
+
+void encodingTests() {
+  late Directory tempDir;
+  late Directory sourceDir;
+  late LocalLibraryStore store;
+
+  setUp(() {
+    tempDir = Directory.systemTemp.createTempSync('encoding_test');
+    sourceDir = Directory(p.join(tempDir.path, 'source'))..createSync();
+    store = LocalLibraryStore(Directory(p.join(tempDir.path, 'library')));
+  });
+
+  tearDown(() => tempDir.deleteSync(recursive: true));
+
+  File writeSjis(String name) =>
+      File(p.join(sourceDir.path, name))..writeAsBytesSync(_sjisBytes);
+
+  test('Shift_JIS のファイルも取り込め、元のファイルはそのまま', () async {
+    final file = writeSjis('古い.txt');
+    final result = await store.scanFolder(sourceDir.path);
+    expect(result.added, 1);
+    expect(result.nonUtf8, 1);
+    expect(result.converted, 0);
+    final id = (await store.loadWorks()).single.id;
+    expect(await store.readText(id), '車の物語。');
+    expect(file.readAsBytesSync(), _sjisBytes);
+  });
+
+  test('設定を入れると、元のファイルを UTF-8 に書き直す', () async {
+    final file = writeSjis('古い.txt');
+    await store.saveTextOptions(
+      const LocalTextOptions(convertSourceToUtf8: true),
+    );
+    final result = await store.scanFolder(sourceDir.path);
+    expect(result.converted, 1);
+    expect(utf8.decode(file.readAsBytesSync()), '車の物語。');
+    // 書き直したことで「書き換わった」とは扱わない
+    final again = await store.scanFolder(sourceDir.path);
+    expect(again.updated, 0);
+    expect(again.added, 0);
+  });
+
+  test('取り込み済みのフォルダをあとからまとめて書き直せる', () async {
+    final file = writeSjis('古い.txt');
+    await store.scanFolder(sourceDir.path);
+    final result = await store.convertSourcesToUtf8();
+    expect(result.converted, 1);
+    expect(utf8.decode(file.readAsBytesSync()), '車の物語。');
+    expect((await store.scanFolder(sourceDir.path)).updated, 0);
+  });
+
+  test('読めない文字があるファイルは書き直さない', () {
+    final file = File(p.join(sourceDir.path, 'a.txt'))
+      ..writeAsBytesSync([..._sjisBytes, 0x80]);
+    final result = readSourceText(file.path, convertSource: true);
+    expect(result.nonUtf8, isTrue);
+    expect(result.converted, isFalse);
+    expect(file.readAsBytesSync(), [..._sjisBytes, 0x80]);
   });
 }
