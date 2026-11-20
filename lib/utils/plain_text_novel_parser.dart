@@ -1,3 +1,14 @@
+/// テキストファイルを本文要素に変換する（フォークで追加）。
+///
+/// 1. 文字コードの判別（[PlainTextNovelParser.decodeDetailed]）：
+///    BOM → BOM の無い UTF-16 → UTF-8 → Shift_JIS / EUC-JP の順に試す。
+/// 2. 本文の掃除（[PlainTextNovelParser.cleanMarkup]、任意）：HTML のタグ・
+///    青空文庫の注記を取り除く。
+/// 3. ルビ（｜漢字《かんじ》）と傍点の解析。
+/// narou_parser の要素型（PlainText / RubyText / NewLine など）を出力に使い、
+/// Web 小説と同じ描画・読み上げの部品をそのまま使えるようにしている。
+library;
+
 import 'dart:convert';
 import 'dart:typed_data';
 

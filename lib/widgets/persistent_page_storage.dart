@@ -1,3 +1,9 @@
+/// PageStorage の読み書きを、ファイルへの保存に流す（フォークで追加）。
+///
+/// Flutter のスクロール位置の復元（PageStorage）をそのまま使い、
+/// 書き込みだけを横取りして読書位置として保存する。
+library;
+
 import 'package:flutter/widgets.dart';
 
 /// 表示モードを読書位置の保存キーに変換する。

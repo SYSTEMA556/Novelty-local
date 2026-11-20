@@ -1,3 +1,22 @@
+/// ローカル本棚の永続化層（フォークで追加）。
+///
+/// `<アプリの documents>/local_library/` 以下を唯一の保存先として扱う。
+/// - `index.json` 作品一覧 / `texts/<id>.txt` 本文（UTF-8 に正規化済み）
+/// - `positions.json` 読書位置・しおり / `rules.json` 作者の読み取りルール
+/// - `authors.json` 作者の表示名・読み / `sources.json` 再スキャン用のフォルダ
+/// - `playlist.json` 連続再生リスト / `text_options.json` 読み込み設定
+///
+/// 設計上の約束:
+/// - 書き込みはすべて `_writeAtomically`（一時ファイル → rename）で、途中で
+///   落ちても JSON が壊れない。
+/// - 重い処理（ファイルの読み込み・文字コード判別・作者の推定）は
+///   `Isolate.run` に渡す。渡すクロージャが呼び出し元の状態をつかまないよう、
+///   必ずトップレベル関数（`_xxxInBackground`）を経由する。
+/// - 作品 ID はファイル名の FNV ハッシュ（[LocalLibraryStore.idForFileName]）。
+///   同じ名前のファイルは同じ作品として扱い、しおりを引き継ぐ。
+/// - UI の状態は持たない。Riverpod 側（local_library_providers.dart）が包む。
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';

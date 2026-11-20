@@ -1,3 +1,9 @@
+/// 連続再生リスト（フォークで追加）。
+///
+/// 作品 ID の並びだけを `playlist.json` に持つ。本棚から消えた作品はリストに
+/// 残っていても無視する（表示・再生の時点で取り除く）。
+library;
+
 import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';

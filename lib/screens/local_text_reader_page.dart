@@ -1,3 +1,9 @@
+/// ローカルのテキストを表示する読書画面（フォークで追加）。
+///
+/// 本文の描画は Web 小説と同じ NovelContentView を使う。読み上げは
+/// 親（本棚の画面）から渡されたものを使い、無ければ自分で作って片付ける。
+library;
+
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';

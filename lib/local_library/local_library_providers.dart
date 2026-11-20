@@ -1,3 +1,11 @@
+/// ローカル本棚の Riverpod プロバイダ群（フォークで追加）。
+///
+/// [LocalLibraryStore] を包み、一覧・読書位置・ルール・作者情報・読み込み設定を
+/// `AsyncNotifier` として公開する。状態の変更は「先にメモリ上の state を更新 →
+/// ストアへ保存」の順で、画面はすぐに反映される（保存の失敗は次回の読み込みで
+/// 元に戻る）。コード生成（riverpod_generator）は使わず手書きしている。
+library;
+
 import 'dart:async';
 import 'dart:io';
 

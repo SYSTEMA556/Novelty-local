@@ -1,3 +1,11 @@
+/// VOICEVOX の音声合成エンジン（フォークで追加）。
+///
+/// 合成は Kotlin 側（VoicevoxBridge.kt、チャンネル `novelty/voicevox`）で行い、
+/// ここは要求の組み立てと、長い文の分割（[splitForVoicevox]、80文字まで）を担う。
+/// 声の設定値は `voicevox:<キャラクターID>` の形で、端末の声と同じ欄に保存する。
+/// VOICEVOX が使えないときは、そのセッションの間だけ端末の音声合成に切り替える。
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

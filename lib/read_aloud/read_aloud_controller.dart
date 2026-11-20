@@ -1,3 +1,16 @@
+/// 読み上げの状態機械と、端末の音声合成エンジン（フォークで追加）。
+///
+/// [ReadAloudController] は [SpeechDocument] の文を1つずつ [SpeechEngine] に渡す。
+/// - 状態は stopped / playing / paused。一時停止は「その文の頭から再開」で、
+///   文の途中から再開はしない（エンジンが途中再開に対応しないため）。
+/// - 世代番号（`_generation`）で、古い再生ループを確実に打ち切る。
+///   `await` のたびに世代を確かめ、変わっていたら何もせず抜ける。
+/// - 次の文の先読み（prefetch）は、今の文を頼んだあとに送る（VOICEVOX の
+///   キューで今の文が後回しにならないように）。
+/// - 外部（通知・車のボタン）との連携は静的フック [ReadAloudController.onStartedPlaying]
+///   / [ReadAloudController.onDisposed] で行い、このファイルは端末の機能に依存しない。
+library;
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';

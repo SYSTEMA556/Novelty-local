@@ -1,3 +1,10 @@
+/// 作者の読み取りルールの定義（フォークで追加）。
+///
+/// 組み込みルール（[BuiltinRule]）と、ユーザーが足す正規表現ルール（[MetaRule]）、
+/// ファイル名から取り除く文字列（StripPattern）をまとめて [MetaRuleSet] とする。
+/// 正規表現は保存時に検証し、壊れたものは読み込み時に無視する。
+library;
+
 import 'package:flutter/foundation.dart';
 
 /// 組み込みの作者読み取りルール。

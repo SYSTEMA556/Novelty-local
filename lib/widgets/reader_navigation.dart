@@ -1,3 +1,9 @@
+/// 読書画面の位置の取得と移動をまとめる（フォークで追加）。
+///
+/// 縦書き/横書き・スクロール/ページめくりの4通りの表示で、
+/// 「全体のどこにいるか（0〜1）」と「そこへ飛ぶ」を同じ API で扱う。
+library;
+
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';

@@ -1,3 +1,10 @@
+/// ファイル名と本文冒頭から、作品名と作者を推定する（フォークで追加）。
+///
+/// ルール（[MetaRuleSet]）を上から順に試し、最初に当たったものを採用する。
+/// 推定は取り込み時と「全作品を再判定」のときだけ走り、手で直した作品
+/// （`metaLocked`）は上書きしない。
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';

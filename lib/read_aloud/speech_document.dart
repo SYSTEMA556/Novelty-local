@@ -1,3 +1,9 @@
+/// 本文要素を、読み上げる文の列に変換する（フォークで追加）。
+///
+/// 各文は本文全体での文字位置（start / end）を持ち、読書位置・しおりとの
+/// 対応付けに使う。ルビは読み（ruby）を読み、傍点は本文を読む。
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:narou_parser/narou_parser.dart';
 

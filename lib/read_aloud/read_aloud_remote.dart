@@ -1,3 +1,10 @@
+/// 画面の外からの操作と割り込みを、読み上げの操作に置き換える（フォークで追加）。
+///
+/// 端末の API には触らない純粋な Dart で、テストで振る舞いを固定している。
+/// 割り込み（ナビ・電話）で止めたときだけ、終わったら再開する。
+/// ユーザー自身が止めた・他のアプリに音を取られたときは再開しない。
+library;
+
 import 'dart:async';
 
 import 'package:novelty/read_aloud/read_aloud_controller.dart';

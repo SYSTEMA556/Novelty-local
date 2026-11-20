@@ -1,3 +1,10 @@
+/// 読み上げの「演技」の推定（フォークで追加）。
+///
+/// 文ごとに役割（地の文・台詞・心の声）と感情を、記号・語尾・前後の文脈から
+/// 規則ベースで推定し、声の高さ・速さ・抑揚と文のあとの間に変換する。
+/// 機械学習は使わず、端末の中だけで決定的に動く（同じ文には同じ演技）。
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 

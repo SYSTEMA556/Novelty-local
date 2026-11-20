@@ -3,6 +3,7 @@
 このページは、[L4Ph/Novelty](https://github.com/L4Ph/Novelty) をフォーク（自分用に複製）した
 **Novelty-local** で、何を足したのか・どう使うのか・中でどう動いているのかをまとめたものです。
 プログラムを読んだことがない人でも、上から順に読めば全体がつかめるように書いています。
+開発者向けの設計メモ（モジュールの責務・保存形式・スレッド・CI）は [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
 
 ---
 
@@ -321,10 +322,15 @@ sequenceDiagram
 1. **Analyze & Test**：書き方のチェック（警告0件が条件）と自動テスト
 2. **Build Android APK**：インストール用の APK を作る
 
-[Actions のページ](https://github.com/SYSTEMA556/Novelty-local/actions) で緑のチェックが付いた回を開き、
-ページ下の `novelty-local-apk` をダウンロード → 展開 → スマホに入れます。
+ビルドが通ると、APK はリリース [`apk-latest`](https://github.com/SYSTEMA556/Novelty-local/releases/tag/apk-latest) に
+`novelty-local.apk` として上書きで置かれます。スマホでそのリンクを開き、ダウンロードして入れます。
 
-- 署名の鍵は CI 用のものです。元の Novelty（公式版）とは別のアプリとして扱われることがあります。
+- **署名の鍵は固定しています**（リポジトリの Secret `ANDROID_KEYSTORE_BASE64`）。
+  新しい版を上から入れても、本棚・しおり・設定は残ります。
+- 鍵を変えると、次の版を入れる前に一度アンインストールが要ります（そのとき本棚は消えます）。
+- 元の Novelty（公式版）とは署名が違うので、公式版と同時には入りません。
+- 開発者向けの設計メモは [ARCHITECTURE.md](ARCHITECTURE.md) にあります。
+
 - 元のリポジトリ（L4Ph/Novelty）へ Pull Request は送っていません。GitHub に
   「Compare & pull request」が出ても押さないでください（元の作者さんに届いてしまいます）。
 

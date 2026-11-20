@@ -39,6 +39,21 @@ import java.util.zip.ZipInputStream
  * - 声を作る処理は重いので専用のスレッドで1つずつ行い、
  *   次に読む文を先に作っておく（先読み）ことで文と文の間の待ちを減らす
  * - 作った声（WAV）は MediaPlayer で鳴らし、鳴り終わったら Flutter に知らせる
+ *
+ * 開発者向けのメモ（フォークで追加）:
+ * - チャンネル `novelty/voicevox` のメソッド:
+ *   status / prepare / synthesize(text, styleId, speed, pitch, intonation, volume, fresh)
+ *   / prefetch(..., ahead) / configure(performance) / cancelPending / lastTiming
+ *   / play(path) / stop
+ * - 合成スレッドは1本。[PrioritizedTask] の優先度キューで、今読む文（NOW）を
+ *   先読み（NOW + ahead）より先に処理する。実行中のタスクは取り消さない
+ *   （コアの合成は途中で止められず、取り消すと同じ文を二度作ることになるため）。
+ * - メモリ: 声のモデルは使うときに読み、同時に持つ数を標準2・全力3に制限する。
+ *   ネイティブヒープが端末の総メモリの 1/9（全力は 1/6）を超えたら、
+ *   いったん全部外して GC し、最後に使ったモデルだけ読み直す。
+ *   onTrimMemory でも1つまで減らす。長い文は Dart 側で80文字までに分ける。
+ * - インスタンスは MainActivity の companion でアプリ全体に1つ。Activity が
+ *   作り直されても（画面を閉じても読み上げが続く間）使い回す。
  */
 class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
     MethodChannel.MethodCallHandler {

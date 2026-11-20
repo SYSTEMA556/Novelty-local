@@ -1,3 +1,14 @@
+/// 読み上げを OS のメディアセッションにつなぐ（フォークで追加）。
+///
+/// audio_service（通知・ボタン・Android Auto・フォアグラウンドサービス）と
+/// audio_session（音のフォーカス・Bluetooth の切断）を [ReadAloudRemote] に配線する。
+/// - `androidStopForegroundOnPause: false`：一時停止中もサービスを保ち、
+///   画面が消えたままでも割り込みのあとに再開できるようにする。
+/// - 話・作品の切り替わりでは、45秒間「再生中」のまま待つ。いったん idle に
+///   すると、画面が消えている間はフォアグラウンドサービスを再開できないため。
+/// - 初期化に失敗しても読み上げ自体は動く（通知などが出ないだけ）。
+library;
+
 import 'dart:async';
 
 import 'package:audio_service/audio_service.dart';

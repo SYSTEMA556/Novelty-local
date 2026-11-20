@@ -1,3 +1,8 @@
+/// ローカル本棚の一覧（フォークで追加）。
+///
+/// 並べ替え・作者でまとめる表示・右端のインデックス・長押しの操作シートを持つ。
+library;
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';

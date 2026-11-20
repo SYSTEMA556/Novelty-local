@@ -1,3 +1,11 @@
+/// Shift_JIS（CP932）と EUC-JP のデコーダ（フォークで追加）。
+///
+/// 依存パッケージを増やさないよう、対応表（japanese_legacy_tables.dart）を
+/// zlib + base64 で埋め込み、初回使用時に Uint16List へ展開する。
+/// どちらの文字コードか分からないときは両方で読み、読めないバイト（×100）と
+/// 半角カナの数の合計（[LegacyDecodeResult.penalty]）が小さいほうを採る。
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';

@@ -1,3 +1,10 @@
+/// Web 小説の話ごとの読書位置（フォークで追加）。
+///
+/// `<documents>/reader/web_positions.json` に、話ごと・表示方式ごと
+/// （縦書き/横書き × スクロール/ページめくり）のスクロール量を持つ。
+/// 件数が [maxWebEpisodePositions] を超えたら古いものから捨てる。
+library;
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';

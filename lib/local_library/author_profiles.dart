@@ -1,3 +1,9 @@
+/// 作者ごとの表示名の付け替えと読み仮名（フォークで追加）。
+///
+/// 作者は [WorkMetaDetector.authorKey]（空白などを除いた正規化済みの名前）で
+/// 同一視する。本文から推定した名前は変えず、表示のときだけ付け替える。
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
 

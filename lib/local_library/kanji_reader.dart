@@ -1,3 +1,11 @@
+/// 漢字の読み仮名の辞書（フォークで追加）。
+///
+/// `assets/dict/readings.tsv.gz`（JMdict から
+/// tool/build_reading_dictionary.py で作成、CC BY-SA 4.0）を Isolate で展開し、
+/// ソート済みの行を二分探索して最長一致で読む。
+/// ソートキーを作るためだけの用途で、表示する読みではない。
+library;
+
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
