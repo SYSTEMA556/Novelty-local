@@ -334,6 +334,38 @@ sequenceDiagram
 - 元のリポジトリ（L4Ph/Novelty）へ Pull Request は送っていません。GitHub に
   「Compare & pull request」が出ても押さないでください（元の作者さんに届いてしまいます）。
 
+### 5-1. 手元でビルドする
+
+```bash
+git clone -b feat/local-text-file https://github.com/SYSTEMA556/Novelty-local.git
+cd Novelty-local
+flutter pub get
+dart run build_runner build -d
+flutter build apk --release
+```
+
+- VOICEVOX の部品はリポジトリに入れていません。CI が公式の配布物から取ってきて置きます。
+  手元でビルドするときは、[ci.yml](.github/workflows/ci.yml) の「Fetch VOICEVOX」と同じように置いてください。
+
+  | 部品 | 置き場所 |
+  |---|---|
+  | コア（Maven パッケージ） | `android/voicevox-maven/` |
+  | ONNX Runtime | `android/app/src/main/jniLibs/arm64-v8a/` |
+  | 辞書・声のモデル | `android/app/src/main/assets/voicevox/` |
+
+  コアが無いと Kotlin のコンパイルが通りません。
+- release 署名は `android/app/key.properties` を読みます。CI では Secret `ANDROID_KEYSTORE_BASE64` から作ります。
+- `flutter analyze` は info も含めて 0 件、が CI の条件です（very_good_analysis）。
+
+### 5-2. 元の Novelty から増えた権限
+
+| 権限 | 理由 |
+|---|---|
+| すべてのファイルへのアクセス（`MANAGE_EXTERNAL_STORAGE`） | フォルダを選んで .txt をまとめて取り込む・再スキャンする |
+| フォアグラウンドサービス（メディア再生）・`WAKE_LOCK` | 画面を消しても読み上げを続ける |
+
+カメラ・位置情報・連絡先・マイクは使いません。
+
 ---
 
 ## 6. Claude と一緒に改造したことについて
