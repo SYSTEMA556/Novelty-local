@@ -38,7 +38,7 @@ class _ReadingDictionarySheet extends StatefulWidget {
 }
 
 class _ReadingDictionarySheetState extends State<_ReadingDictionarySheet> {
-  final _dictionary = ReadingDictionary.shared;
+  final ReadingDictionary _dictionary = ReadingDictionary.shared;
 
   String? get _scope => widget.controller?.dictionaryScope;
 
