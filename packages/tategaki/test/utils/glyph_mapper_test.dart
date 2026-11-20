@@ -44,6 +44,19 @@ void main() {
         expect(GlyphMapper.map('–'), '丨');
       });
 
+      test('ダッシュ代わりの罫線・記号も縦にする', () {
+        for (final c in ['─', '‒', '⁃', '⎯', '⸺', '⸻', '﹘', '﹣']) {
+          expect(GlyphMapper.map(c), '丨', reason: c);
+        }
+      });
+
+      test('横の罫線は、太さ・破線の種類が同じ縦の罫線にする', () {
+        expect(GlyphMapper.map('━'), '┃');
+        expect(GlyphMapper.map('┄'), '┆');
+        expect(GlyphMapper.map('═'), '║');
+        expect(GlyphMapper.map('╌'), '╎');
+      });
+
       test('‐を丨に変換する', () {
         expect(GlyphMapper.map('‐'), '丨');
       });
