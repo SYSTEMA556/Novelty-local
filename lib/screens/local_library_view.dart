@@ -24,6 +24,7 @@ import 'package:novelty/screens/local_work_reader_page.dart';
 import 'package:novelty/screens/read_aloud_playlist_sheet.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/indexed_list.dart';
+import 'package:novelty/widgets/reading_dictionary_sheet.dart';
 
 /// ローカル作品の並び順。
 enum LocalSort {
@@ -324,6 +325,8 @@ class LocalLibraryView extends HookConsumerWidget {
                   unawaited(showLocalDisplayDialog(context, ref));
                 case 'text':
                   unawaited(showLocalTextOptionsSheet(context, ref));
+                case 'dictionary':
+                  unawaited(showReadingDictionarySheet(context));
                 case 'playlist':
                   unawaited(showReadAloudPlaylistSheet(context));
                 case 'rescan':
@@ -332,6 +335,7 @@ class LocalLibraryView extends HookConsumerWidget {
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'playlist', child: Text('連続再生リスト')),
+              PopupMenuItem(value: 'dictionary', child: Text('読み方の辞書')),
               PopupMenuItem(value: 'rescan', child: Text('取り込んだフォルダを再スキャン')),
               PopupMenuItem(value: 'display', child: Text('表示の設定（リスト／グリッド）')),
               PopupMenuItem(value: 'text', child: Text('テキストの読み込み設定')),

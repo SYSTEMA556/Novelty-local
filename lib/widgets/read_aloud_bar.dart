@@ -6,6 +6,7 @@ import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
 import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/reading_dictionary_sheet.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 /// 画面を消さない設定を切り替える（失敗しても読書は続けられるため無視する）。
@@ -92,6 +93,14 @@ class ReadAloudBar extends StatelessWidget {
               ],
             ),
             const Spacer(),
+            // 読み間違いを直す辞書（今の文を見ながら登録できる）
+            IconButton(
+              icon: const Icon(Icons.record_voice_over_outlined),
+              tooltip: '読み方の辞書',
+              onPressed: () => unawaited(
+                showReadingDictionarySheet(context, controller: controller),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.skip_previous),
               tooltip: '前の文',

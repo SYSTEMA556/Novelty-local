@@ -15,6 +15,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
@@ -204,9 +205,21 @@ class ReadAloudController extends ChangeNotifier {
     this.onCompleted,
     this.mediaTitle,
     this.mediaSubtitle,
+    this.dictionaryScope,
+    ReadingDictionary? dictionary,
     String? announcement,
   }) : _engine = engine ?? CompositeSpeechEngine(),
+       _dictionary = dictionary ?? ReadingDictionary.shared,
        _announcement = announcement;
+
+  /// 読み方の辞書で使う作品の範囲（null なら「すべての作品」の登録だけ）。
+  final String? dictionaryScope;
+
+  final ReadingDictionary _dictionary;
+
+  // 音声エンジンに渡す文字列（読み方の辞書で置き換える。本文は変えない）
+  String _spoken(String text) =>
+      _dictionary.apply(text, scope: dictionaryScope);
 
   /// 読み上げを始めたときに呼ばれる（通知・車のボタンとつなぐのに使う）。
   ///
@@ -400,7 +413,7 @@ class ReadAloudController extends ChangeNotifier {
             voice: _narrationVoice,
           );
           if (generation != _generation) return;
-          await _engine.speak(announcement);
+          await _engine.speak(_spoken(announcement));
           if (generation != _generation) return;
           await Future<void>.delayed(const Duration(milliseconds: 600));
           if (generation != _generation) return;
@@ -418,7 +431,7 @@ class ReadAloudController extends ChangeNotifier {
           final next = directions[nextIndex];
           unawaited(
             _engine.prefetch(
-              document.segments[nextIndex].text,
+              _spoken(document.segments[nextIndex].text),
               _prosodyOf(next),
               voice: _voiceOf(next),
               direction: _acting > 0 ? next : null,
@@ -426,7 +439,7 @@ class ReadAloudController extends ChangeNotifier {
             ),
           );
         }
-        await _engine.speak(document.segments[_index].text);
+        await _engine.speak(_spoken(document.segments[_index].text));
       } on Object catch (e) {
         debugPrint('Read aloud failed: $e');
         if (generation == _generation) {

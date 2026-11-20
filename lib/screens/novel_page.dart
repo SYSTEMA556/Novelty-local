@@ -7,6 +7,7 @@ import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/models/episode.dart';
 import 'package:novelty/models/novel_info.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
@@ -220,6 +221,7 @@ class NovelPage extends HookConsumerWidget {
             document: document,
             onCompleted: () => advanceRef.value?.call(),
             mediaTitle: novelInfo.title ?? heading,
+            dictionaryScope: ReadingDictionary.webScope(source.name, workId),
             mediaSubtitle: heading,
             // 次の話へ進んだときは、話の題を読んで知らせる
             announcement: announce ? heading : null,

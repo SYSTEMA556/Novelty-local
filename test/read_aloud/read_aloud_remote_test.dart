@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/read_aloud_remote.dart';
+import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 
@@ -148,6 +149,23 @@ void main() {
       unawaited(controller.playFrom(0));
       await pumpEventQueue();
       expect(controller.finished, isFalse);
+    });
+
+    test('読み方の辞書は音声にだけ効き、文の位置は変えない', () async {
+      final engine = _FakeEngine();
+      final controller = ReadAloudController(
+        document: _doc('天音は笑った。'),
+        engine: engine,
+        dictionaryScope: 'local:x',
+        dictionary: ReadingDictionary([
+          const ReadingRule(surface: '天音', reading: 'あまね', scope: 'local:x'),
+        ]),
+      );
+      addTearDown(controller.dispose);
+      unawaited(controller.playFrom(0));
+      await pumpEventQueue();
+      expect(engine.spoken, ['あまねは笑った。']);
+      expect(controller.currentSegment?.text, '天音は笑った。');
     });
 
     test('題名のある読み上げだけ、始めたことを知らせる', () async {

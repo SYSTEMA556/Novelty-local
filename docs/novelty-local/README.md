@@ -51,6 +51,7 @@
 | | 画面を消しても続ける | 通知を出して「音楽アプリ」として動くので、画面を消しても眠らされない |
 | | 連続再生リスト | 本棚の作品を並べておくと、読み終えるたびに次の作品へ進む（「次は、〇〇」と知らせる） |
 | | 話の題を読み上げる | Web小説で次の話へ進んだとき、「第N話 サブタイトル」を最初に読む |
+| | 読み方の辞書 | 読み間違える言葉に読みを登録（この作品だけ／すべての作品）。読み上げバーの🗣から、今の文を見ながら登録して読み直せる |
 
 ---
 
@@ -296,6 +297,8 @@ sequenceDiagram
 | `read_aloud/speech_direction.dart` | 読み上げの演技（役割・感情・間の推定） |
 | `read_aloud/read_aloud_remote.dart` | 画面の外からの操作（ボタン・ナビ・電話・Bluetooth）を読み上げの操作に置き換える |
 | `read_aloud/read_aloud_media.dart` | 通知・ロック画面・車の画面とのつなぎ（audio_service・audio_session） |
+| `read_aloud/reading_dictionary.dart` | 読み方の辞書（音声に渡す文字だけを置き換える） |
+| `widgets/reading_dictionary_sheet.dart` | 読み方の辞書の画面 |
 | `local_library/read_aloud_playlist.dart` | 連続再生リスト（`playlist.json` に保存） |
 | `screens/read_aloud_playlist_sheet.dart` | 連続再生リストの画面（並べ替え・外す・再生） |
 

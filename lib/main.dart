@@ -10,6 +10,7 @@ import 'package:novelty/database/database_initialization.dart';
 import 'package:novelty/database/database_maintenance.dart';
 import 'package:novelty/local_library/kanji_reader.dart';
 import 'package:novelty/read_aloud/read_aloud_media.dart';
+import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
 import 'package:novelty/router/router.dart';
 import 'package:novelty/screens/database_maintenance_screen.dart';
@@ -28,6 +29,8 @@ Future<void> main() async {
   registerVoicevoxLicenses();
   // 読み上げを通知・ハンドルのボタン・車の画面から操作できるようにする
   unawaited(ReadAloudMedia.init());
+  // 読み上げの読み間違いを直す辞書
+  unawaited(ReadingDictionary.shared.loadShared());
 
   runApp(
     const ProviderScope(

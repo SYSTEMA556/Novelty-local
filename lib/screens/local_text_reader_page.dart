@@ -14,6 +14,7 @@ import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
@@ -116,6 +117,9 @@ ReadAloudController createLocalReadAloud({
     document: document,
     mediaTitle: title,
     mediaSubtitle: author,
+    dictionaryScope: workId == null
+        ? null
+        : ReadingDictionary.localScope(workId),
     announcement: announcement,
     onCompleted: onCompleted,
     onPositionChanged: (segment) {
