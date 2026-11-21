@@ -52,6 +52,8 @@
 | | 連続再生リスト | 本棚の作品と Web 小説（なろう・カクヨム）を並べ、画面を開かずに上から順に読み上げる。Web 小説は最後に読んだ話から最終話まで話を送る。作品の切り替わりで「次は、〇〇」と知らせる |
 | | 話の題を読み上げる | Web小説で次の話へ進んだとき、「第N話 サブタイトル」を最初に読む |
 | | 読み方の辞書 | 読み間違える言葉に読みを登録（この作品だけ／すべての作品）。読み上げバーの🗣から、今の文を見ながら登録して読み直せる |
+| 一覧 | カード表示 | なろう・カクヨムのランキングを2列のカードで（右上の切り替え）。色はジャンルごと、大きな題名とあらすじの最初の一文 |
+| | おすすめ順 | ローカル本棚の並び順。最近読んだ・読みかけ・入れたばかりの作品を上に。グリッドではカードに順位が付く |
 
 ---
 
@@ -299,6 +301,7 @@ sequenceDiagram
 | `read_aloud/read_aloud_media.dart` | 通知・ロック画面・車の画面とのつなぎ（audio_service・audio_session） |
 | `read_aloud/reading_dictionary.dart` | 読み方の辞書（音声に渡す文字だけを置き換える） |
 | `widgets/reading_dictionary_sheet.dart` | 読み方の辞書の画面 |
+| `widgets/novel_card.dart` | 作品のカード（ランキング・ローカル本棚のグリッド） |
 | `local_library/read_aloud_playlist.dart` | 連続再生リスト（`playlist.json` に保存） |
 | `screens/read_aloud_playlist_sheet.dart` | 連続再生リストの画面（並べ替え・外す・再生） |
 | `read_aloud/playlist_player.dart` | 連続再生の再生係（画面を開かずに読み込み・読み上げ・次の作品へ） |

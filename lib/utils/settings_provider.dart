@@ -33,6 +33,7 @@ class AppSettings {
     this.tapZoneDisablePrevious = false,
     this.tapZoneGuideOpacity = 0,
     this.bottomGuardPercent = 10,
+    this.rankingCardView = false,
     this.localGridEnabled = false,
     this.localGridColumns = 3,
     this.localGridShowNames = true,
@@ -121,6 +122,9 @@ class AppSettings {
   /// 誤ってページが進んだりシークバーが動いたりしないようにする。
   final int bottomGuardPercent;
 
+  /// ランキングをカード（2列）で表示するか。フォークで追加。
+  final bool rankingCardView;
+
   /// ローカル作品の一覧をグリッドで表示するか。
   final bool localGridEnabled;
 
@@ -168,6 +172,7 @@ class AppSettings {
     bool? tapZoneDisablePrevious,
     int? tapZoneGuideOpacity,
     int? bottomGuardPercent,
+    bool? rankingCardView,
     bool? localGridEnabled,
     int? localGridColumns,
     bool? localGridShowNames,
@@ -198,6 +203,7 @@ class AppSettings {
           tapZoneDisablePrevious ?? this.tapZoneDisablePrevious,
       tapZoneGuideOpacity: tapZoneGuideOpacity ?? this.tapZoneGuideOpacity,
       bottomGuardPercent: bottomGuardPercent ?? this.bottomGuardPercent,
+      rankingCardView: rankingCardView ?? this.rankingCardView,
       localGridEnabled: localGridEnabled ?? this.localGridEnabled,
       localGridColumns: localGridColumns ?? this.localGridColumns,
       localGridShowNames: localGridShowNames ?? this.localGridShowNames,
@@ -232,6 +238,7 @@ class Settings extends _$Settings {
   static const _tapZoneDisablePreviousKey = 'tap_zone_disable_previous';
   static const _tapZoneGuideOpacityKey = 'tap_zone_guide_opacity';
   static const _bottomGuardPercentKey = 'bottom_guard_percent';
+  static const _rankingCardViewKey = 'ranking_card_view';
   static const _localGridEnabledKey = 'local_grid_enabled';
   static const _localGridColumnsKey = 'local_grid_columns';
   static const _localGridShowNamesKey = 'local_grid_show_names';
@@ -295,6 +302,7 @@ class Settings extends _$Settings {
     final tapZoneGuideOpacity =
         await repo.getInt(_tapZoneGuideOpacityKey) ?? 0;
     final bottomGuardPercent = await repo.getInt(_bottomGuardPercentKey) ?? 10;
+    final rankingCardView = await repo.getBool(_rankingCardViewKey) ?? false;
     final localGridEnabled = await repo.getBool(_localGridEnabledKey) ?? false;
     final localGridColumns = await repo.getInt(_localGridColumnsKey) ?? 3;
     final localGridShowNames =
@@ -325,6 +333,7 @@ class Settings extends _$Settings {
       tapZoneDisablePrevious: tapZoneDisablePrevious,
       tapZoneGuideOpacity: tapZoneGuideOpacity,
       bottomGuardPercent: bottomGuardPercent,
+      rankingCardView: rankingCardView,
       localGridEnabled: localGridEnabled,
       localGridColumns: localGridColumns,
       localGridShowNames: localGridShowNames,
@@ -420,6 +429,13 @@ class Settings extends _$Settings {
     'bottom guard',
     (repo) => repo.setInt(_bottomGuardPercentKey, percent),
     (s) => s.copyWith(bottomGuardPercent: percent),
+  );
+
+  /// ランキングをカードで表示するかを保存する。
+  Future<void> setRankingCardView({required bool enabled}) => _save(
+    'ranking card view',
+    (repo) => repo.setBool(_rankingCardViewKey, enabled),
+    (s) => s.copyWith(rankingCardView: enabled),
   );
 
   /// ローカル作品のグリッド表示の設定をまとめて保存する。

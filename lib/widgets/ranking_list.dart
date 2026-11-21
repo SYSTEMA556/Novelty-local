@@ -3,8 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:novelty/models/novel_info.dart';
 import 'package:novelty/providers/ranking_provider.dart';
+import 'package:novelty/router/router.dart';
+import 'package:novelty/sites/novel_site_registry.dart';
 import 'package:novelty/sites/novel_source.dart';
+import 'package:novelty/utils/settings_provider.dart';
+import 'package:novelty/widgets/novel_card.dart';
 import 'package:novelty/widgets/novel_list_tile.dart';
 
 /// ランキングリストを表示するウィジェット。
@@ -80,6 +85,42 @@ class RankingList extends HookConsumerWidget {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // カード表示（フォークで追加）
+    final cardView =
+        ref.watch(settingsProvider.select((s) => s.value?.rankingCardView)) ??
+        false;
+    if (cardView) {
+      return RefreshIndicator(
+        onRefresh: () async {
+          await ref
+              .read(rankingProvider(source, rankingType).notifier)
+              .refresh();
+        },
+        child: GridView.builder(
+          controller: scrollController,
+          padding: const EdgeInsets.all(8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 0.72,
+          ),
+          itemCount:
+              rankingState.novels.length +
+              (rankingState.isLoadingMore ? 1 : 0),
+          itemBuilder: (context, index) {
+            if (index == rankingState.novels.length) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            return RankingCard(
+              novel: rankingState.novels[index],
+              rank: index + 1,
+            );
+          },
+        ),
+      );
+    }
+
     return RefreshIndicator(
       onRefresh: () async {
         await ref.read(rankingProvider(source, rankingType).notifier).refresh();
@@ -108,6 +149,58 @@ class RankingList extends HookConsumerWidget {
           );
         },
       ),
+    );
+  }
+}
+
+/// ランキングの1作品のカード（フォークで追加）。
+///
+/// 背景の色はサイトとジャンルで決まる（同じジャンルは同じ色）。
+class RankingCard extends StatelessWidget {
+  /// コンストラクタ。
+  const RankingCard({required this.novel, required this.rank, super.key});
+
+  /// 作品。
+  final NovelInfo novel;
+
+  /// 順位。
+  final int rank;
+
+  @override
+  Widget build(BuildContext context) {
+    final site = defaultNovelSiteRegistry[novel.source]!;
+    final genreId = novel.genreId;
+    final genre = genreId == null
+        ? null
+        : site.genres.where((g) => g.id == genreId).firstOrNull?.name;
+    final status = novel.novelType == 2
+        ? '短編'
+        : novel.end == 1
+        ? '連載'
+        : '完結';
+    final episodes = novel.generalAllNo;
+    final meta = [
+      ?site.metaText(novel),
+      if (novel.novelType != 2 && episodes != null) '全$episodes話',
+    ].join('・');
+    return NovelCard(
+      title: novel.title ?? 'タイトルなし',
+      colorSeed: '${novel.source.name}:${genreId ?? ''}',
+      rank: rank,
+      label: genre,
+      blurb: novelCardBlurb(novel.story),
+      badge: status,
+      meta: meta.isEmpty ? null : meta,
+      onTap: () {
+        final workId = novel.workId ?? novel.ncode;
+        if (workId == null) return;
+        unawaited(
+          NovelDetailRoute(
+            source: novel.source.name,
+            workId: workId,
+          ).push(context),
+        );
+      },
     );
   }
 }

@@ -4,6 +4,7 @@
 library;
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -24,6 +25,7 @@ import 'package:novelty/screens/local_work_reader_page.dart';
 import 'package:novelty/screens/read_aloud_playlist_sheet.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/indexed_list.dart';
+import 'package:novelty/widgets/novel_card.dart';
 import 'package:novelty/widgets/reading_dictionary_sheet.dart';
 
 /// ローカル作品の並び順。
@@ -35,7 +37,10 @@ enum LocalSort {
   added('追加順'),
 
   /// 最近読んだ順。
-  recent('最近読んだ順');
+  recent('最近読んだ順'),
+
+  /// おすすめ順（最近読んだ・読みかけ・新しく入れた作品を上に）。フォークで追加。
+  picks('おすすめ順');
 
   const LocalSort(this.label);
 
@@ -61,6 +66,7 @@ List<LocalWork> filterAndSortWorks(
   required LocalSort sort,
   AuthorProfiles profiles = AuthorProfiles.empty,
   KanjiReader? reader,
+  DateTime? now,
 }) {
   final readings = <String, String>{};
   String readingOf(LocalWork w) =>
@@ -95,8 +101,40 @@ List<LocalWork> filterAndSortWorks(
         if (pb == null) return -1;
         return pb.compareTo(pa);
       });
+    case LocalSort.picks:
+      final at = now ?? DateTime.now();
+      final scores = {
+        for (final w in result) w.id: localPickScore(w, positions[w.id], at),
+      };
+      result.sort((a, b) {
+        final byScore = scores[b.id]!.compareTo(scores[a.id]!);
+        return byScore != 0 ? byScore : byTitle(a, b);
+      });
   }
   return result;
+}
+
+/// おすすめ順の点数（大きいほど上）。フォークで追加。
+///
+/// ローカルの作品には人気の順位が無いので、自分の読み方から点を付ける。
+/// - 最近読んだほど高い：100点から、1週間ごとに半分になる
+/// - 読みかけ（2%〜97%）は 1.5倍、読み終えた作品は 0.3倍
+/// - まだ読んでいない作品は、入れたばかりなら30点から、3日ごとに半分になる
+double localPickScore(LocalWork work, ReadingPosition? position, DateTime now) {
+  double halfLife(DateTime since, double days) {
+    final elapsed = now.difference(since).inMinutes / Duration.minutesPerDay;
+    return math.pow(0.5, elapsed.clamp(0, 3650) / days).toDouble();
+  }
+
+  if (position == null) return 30 * halfLife(work.addedAt, 3);
+  var score = 100 * halfLife(position.updatedAt, 7);
+  final progress = position.progress;
+  if (progress >= 0.97) {
+    score *= 0.3;
+  } else if (progress > 0.02) {
+    score *= 1.5;
+  }
+  return score;
 }
 
 /// ローカルタブの表示単位。
@@ -243,6 +281,11 @@ class LocalLibraryView extends HookConsumerWidget {
               reader: reader,
             ),
       [allWorks, positions, query.value, sort.value, profiles, reader],
+    );
+    // おすすめ順のときの順位（グリッドのカードに出す）
+    final rankOf = useMemoized(
+      () => {for (var i = 0; i < works.length; i++) works[i].id: i + 1},
+      [works],
     );
     final groups = useMemoized(
       () => allWorks == null
@@ -426,6 +469,10 @@ class LocalLibraryView extends HookConsumerWidget {
                               work: work,
                               position: positions[work.id],
                               showName: grid.showNames,
+                              // おすすめ順では、上からの順位を付ける
+                              rank: sort.value == LocalSort.picks
+                                  ? rankOf[work.id]
+                                  : null,
                               onTap: () =>
                                   unawaited(openLocalWork(context, work)),
                               onLongPress: () => unawaited(
@@ -718,11 +765,13 @@ class _WorkGridTile extends ConsumerWidget {
     required this.showName,
     required this.onTap,
     required this.onLongPress,
+    this.rank,
   });
 
   final LocalWork work;
   final ReadingPosition? position;
   final bool showName;
+  final int? rank;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
 
@@ -731,12 +780,30 @@ class _WorkGridTile extends ConsumerWidget {
     final profiles =
         ref.watch(authorProfilesProvider).value ?? AuthorProfiles.empty;
     final pos = position;
-    return _GridTile(
-      icon: pos == null ? Icons.description_outlined : Icons.bookmark,
-      iconColor: pos == null ? null : Theme.of(context).colorScheme.primary,
-      title: showName ? work.title : null,
-      subtitle: showName ? profiles.effectiveName(work.author) : null,
-      progress: pos?.progress,
+    if (!showName) {
+      return _GridTile(
+        icon: pos == null ? Icons.description_outlined : Icons.bookmark,
+        iconColor: pos == null ? null : Theme.of(context).colorScheme.primary,
+        progress: pos?.progress,
+        onTap: onTap,
+        onLongPress: onLongPress,
+      );
+    }
+    // 名前を出すときはカードにする（背景の色は作者ごと。フォークで変更）
+    final author = profiles.effectiveName(work.author);
+    final progress = pos?.progress;
+    return NovelCard(
+      title: work.title,
+      colorSeed: 'local:${author ?? ''}',
+      rank: rank,
+      label: author,
+      badge: pos == null
+          ? '未読'
+          : (progress ?? 0) >= 0.97
+          ? '読了'
+          : '読みかけ',
+      meta: '${(work.charCount / 10000).toStringAsFixed(1)}万字',
+      progress: pos == null ? null : progress,
       onTap: onTap,
       onLongPress: onLongPress,
     );

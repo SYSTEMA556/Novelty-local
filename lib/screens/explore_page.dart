@@ -148,6 +148,9 @@ class _ExplorePageState extends ConsumerState<ExplorePage>
     final searchState = ref.watch(searchStateProvider);
     final isOfflineMode = ref.watch(isOfflineModeProvider);
 
+    final cardView =
+        ref.watch(settingsProvider.select((s) => s.value?.rankingCardView)) ??
+        false;
     return PopScope(
       canPop: !searchState.isSearching,
       onPopInvokedWithResult: (didPop, _) {
@@ -193,6 +196,17 @@ class _ExplorePageState extends ConsumerState<ExplorePage>
                   ? () => _showOfflineDisabledSnackBar(context)
                   : _showSearchModal,
             ),
+            // ランキングのカード表示⇔一覧表示（フォークで追加）
+            if (!searchState.isSearching)
+              IconButton(
+                icon: Icon(cardView ? Icons.view_list : Icons.grid_view),
+                tooltip: cardView ? '一覧で表示' : 'カードで表示',
+                onPressed: () => unawaited(
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setRankingCardView(enabled: !cardView),
+                ),
+              ),
             if (!searchState.isSearching)
               IconButton(
                 icon: const Icon(Icons.filter_list),

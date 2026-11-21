@@ -113,4 +113,56 @@ void main() {
       expect(groups.map((g) => g.name), ['夏目漱石']);
     });
   });
+
+  group('おすすめ順', () {
+    final now = DateTime(2026, 11, 21);
+    LocalWork added(String id, int daysAgo) => LocalWork(
+      id: id,
+      title: id,
+      fileName: '$id.txt',
+      charCount: 100,
+      addedAt: now.subtract(Duration(days: daysAgo)),
+    );
+    ReadingPosition read(int daysAgo, double progress) => ReadingPosition(
+      offsets: const {},
+      progress: progress,
+      updatedAt: now.subtract(Duration(days: daysAgo)),
+    );
+
+    test('最近読んだほど、読みかけほど上に来る', () {
+      final result = filterAndSortWorks(
+        [added('old', 100), added('reading', 100), added('done', 100)],
+        {
+          'old': read(30, 0.5),
+          'reading': read(1, 0.5),
+          'done': read(1, 1),
+        },
+        query: '',
+        sort: LocalSort.picks,
+        now: now,
+      );
+      expect(result.map((w) => w.id), ['reading', 'done', 'old']);
+    });
+
+    test('入れたばかりの未読は、しばらく読んでいない作品より上に来る', () {
+      final result = filterAndSortWorks(
+        [added('stale', 100), added('new', 0)],
+        {'stale': read(21, 0.5)},
+        query: '',
+        sort: LocalSort.picks,
+        now: now,
+      );
+      expect(result.map((w) => w.id), ['new', 'stale']);
+    });
+
+    test('点数は時間がたつほど下がる', () {
+      final w = added('a', 0);
+      expect(
+        localPickScore(w, read(0, 0.5), now),
+        greaterThan(localPickScore(w, read(7, 0.5), now)),
+      );
+      expect(localPickScore(w, read(7, 0.5), now), closeTo(75, 0.01));
+    });
+  });
 }
+
