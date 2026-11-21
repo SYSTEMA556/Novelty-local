@@ -456,6 +456,25 @@ class EpisodeData {
   final int? fetchedAt;
 }
 
+/// [AppDatabase.cleanUpUnusedNovels] で消した件数（フォークで追加）。
+class UnusedDataCleanup {
+  /// コンストラクタ。
+  const UnusedDataCleanup({
+    required this.novels,
+    required this.episodes,
+    required this.history,
+  });
+
+  /// 消した作品の数。
+  final int novels;
+
+  /// 消したダウンロード済みの話の数。
+  final int episodes;
+
+  /// 消した閲覧履歴の数。
+  final int history;
+}
+
 @DriftDatabase(
   tables: [
     Novels,
@@ -1137,6 +1156,65 @@ class AppDatabase extends _$AppDatabase {
           libraryEntries,
         )..where((t) => t.source.equalsValue(source) & t.workId.equals(workId)))
         .go();
+  }
+
+  /// 使っていない作品のデータを消す（フォークで追加）。
+  ///
+  /// 「ライブラリから外す」は本棚の札（[libraryEntries]）だけを消し、
+  /// 作品情報・目次・ダウンロード済みの本文・閲覧履歴は残る。
+  /// バックアップはデータベースをまるごと写すので、それらも入ってしまう。
+  ///
+  /// ライブラリに無い作品の作品情報・目次・本文を消す。[keepHistory] なら
+  /// 閲覧履歴に残っている作品は消さない。false なら、その履歴も消す。
+  /// 最後に VACUUM でファイルを縮める。
+  Future<UnusedDataCleanup> cleanUpUnusedNovels({
+    required bool keepHistory,
+  }) async {
+    final library = libraryEntries.actualTableName;
+    final history = readingHistory.actualTableName;
+    // 「この行の作品は残す」の条件（ライブラリ、または履歴にある）
+    String kept(String table) => [
+      'EXISTS (SELECT 1 FROM $library k',
+      ' WHERE k.source = $table.source AND k.work_id = $table.work_id)',
+      if (keepHistory) ...[
+        ' OR EXISTS (SELECT 1 FROM $history h',
+        ' WHERE h.source = $table.source AND h.work_id = $table.work_id)',
+      ],
+    ].join();
+    Future<int> purge(TableInfo<Table, dynamic> table) {
+      final name = table.actualTableName;
+      return customUpdate(
+        'DELETE FROM $name WHERE NOT (${kept(name)})',
+        updates: {table},
+        updateKind: UpdateKind.delete,
+      );
+    }
+
+    final result = await transaction(() async {
+      final contents = await purge(episodeContents);
+      await purge(episodeListEntries);
+      final novelsRemoved = await purge(novels);
+      final historyRemoved = keepHistory
+          ? 0
+          : await customUpdate(
+              [
+                'DELETE FROM $history WHERE NOT EXISTS',
+                ' (SELECT 1 FROM $library k',
+                ' WHERE k.source = $history.source',
+                ' AND k.work_id = $history.work_id)',
+              ].join(),
+              updates: {readingHistory},
+              updateKind: UpdateKind.delete,
+            );
+      return UnusedDataCleanup(
+        novels: novelsRemoved,
+        episodes: contents,
+        history: historyRemoved,
+      );
+    });
+    // 消した分だけファイルを縮める（トランザクションの外で行う）
+    await customStatement('VACUUM');
+    return result;
   }
 
   /// ライブラリの小説リストを取得（追加日時の降順）

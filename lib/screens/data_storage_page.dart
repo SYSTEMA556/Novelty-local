@@ -139,6 +139,18 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
           ),
           error: (err, stack) => ListTile(title: Text('エラー: $err')),
         ),
+        // フォークで追加：ライブラリから外した作品のデータを片付ける
+        ListTile(
+          leading: const Icon(Icons.cleaning_services_outlined),
+          title: const Text('使っていないデータを整理'),
+          subtitle: Text(
+            [
+              'ライブラリから外した作品の情報・ダウンロード済みの話を消して、',
+              'バックアップを小さくします',
+            ].join(),
+          ),
+          onTap: () => unawaited(_cleanUpUnusedData()),
+        ),
         ListTile(
           leading: const Icon(Icons.delete_sweep),
           title: const Text('キャッシュを削除'),
@@ -147,6 +159,42 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
           onTap: _clearCache,
         ),
       ],
+    );
+  }
+
+  /// 使っていないデータを整理する（フォークで追加）。
+  Future<void> _cleanUpUnusedData() async {
+    final keepHistory = await showDialog<bool>(
+      context: context,
+      builder: (context) => const _CleanUpDialog(),
+    );
+    if (keepHistory == null || !mounted) return;
+
+    UnusedDataCleanup? result;
+    Object? error;
+    try {
+      result = await runWithDatabaseMaintenance(
+        ref,
+        label: '使っていないデータを整理しています…',
+        task: () => ref
+            .read(appDatabaseProvider)
+            .cleanUpUnusedNovels(keepHistory: keepHistory),
+      );
+    } on Object catch (e) {
+      error = e;
+    }
+    if (!mounted) return;
+    if (error != null || result == null) {
+      unawaited(_showErrorDialog('整理に失敗しました', '$error'));
+      return;
+    }
+    await _showSuccessDialog(
+      '整理しました',
+      [
+        '作品：${result.novels} 件',
+        'ダウンロード済みの話：${result.episodes} 話',
+        if (!keepHistory) '閲覧履歴：${result.history} 件',
+      ].join('\n'),
     );
   }
 
@@ -296,6 +344,59 @@ class _DataStoragePageState extends ConsumerState<DataStoragePage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// 使っていないデータを整理する前の確認（フォークで追加）。
+///
+/// 閲覧履歴だけに残っている作品も消すかを選ぶ。閉じると null、
+/// 「整理する」で「履歴の作品を残すか」を返す。
+class _CleanUpDialog extends StatefulWidget {
+  const _CleanUpDialog();
+
+  @override
+  State<_CleanUpDialog> createState() => _CleanUpDialogState();
+}
+
+class _CleanUpDialogState extends State<_CleanUpDialog> {
+  bool _alsoHistory = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('使っていないデータを整理'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            [
+              'ライブラリに入っていない作品の、作品情報・目次・',
+              'ダウンロード済みの話を消します。',
+              'ライブラリの作品と、そのしおり・進み具合は消えません。',
+            ].join(),
+          ),
+          const SizedBox(height: 8),
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            value: _alsoHistory,
+            onChanged: (v) => setState(() => _alsoHistory = v ?? false),
+            title: const Text('閲覧履歴だけに残っている作品も消す'),
+            subtitle: const Text('その作品の閲覧履歴も消えます'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('キャンセル'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(!_alsoHistory),
+          child: const Text('整理する'),
+        ),
+      ],
     );
   }
 }
