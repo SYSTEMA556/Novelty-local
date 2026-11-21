@@ -18,7 +18,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/read_aloud_playlist.dart';
 import 'package:novelty/models/episode.dart';
@@ -232,10 +231,9 @@ class PlaylistPlayer extends Notifier<PlaylistNowPlaying?> {
     ep = ep.clamp(1, total);
 
     // 読む文の無い話（挿絵だけなど）は飛ばす
-    List<NovelContentElement>? elements;
     SpeechDocument? document;
     while (ep <= total) {
-      elements = await ref.read(
+      final elements = await ref.read(
         novelContentProvider(source: source, workId: workId, episode: ep)
             .future,
       );

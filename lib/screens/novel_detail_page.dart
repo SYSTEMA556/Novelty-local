@@ -111,9 +111,6 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
     final novelInfoAsync = ref.watch(
       novelInfoWithCacheProvider(widget.source, widget.workId),
     );
-    // 連続再生リストに入っているか（フォークで追加）
-    final inPlaylist = (ref.watch(readAloudPlaylistProvider).value ?? const [])
-        .contains(_playlistEntry.key);
     ref.listen(novelInfoWithCacheProvider(widget.source, widget.workId), (
       previous,
       next,
@@ -195,6 +192,9 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final isOfflineMode = ref.watch(isOfflineModeProvider);
+    // 連続再生リストに入っているか（フォークで追加）
+    final inPlaylist = (ref.watch(readAloudPlaylistProvider).value ?? const [])
+        .contains(_playlistEntry.key);
     final isShortStory = novelInfo.generalAllNo == 1;
     final downloadProgressAsync = ref.watch(
       downloadProgressProvider(widget.source, widget.workId),
