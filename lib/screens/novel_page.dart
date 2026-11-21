@@ -468,13 +468,15 @@ class NovelPage extends HookConsumerWidget {
                   // シークバーに触れないようにする（帯の高さは設定で変えられる）
                   Builder(
                     builder: (context) {
-                      final guard = GestureShield.guardHeightOf(
+                      final guard = ReaderBottomGuard.heightOf(
                         context,
                         settings.bottomGuardPercent,
                       );
                       return SizedBox(
                         height: guard,
-                        child: Stack(children: [GestureShield(height: guard)]),
+                        child: Stack(
+                          children: [ReaderBottomGuard(height: guard)],
+                        ),
                       );
                     },
                   ),

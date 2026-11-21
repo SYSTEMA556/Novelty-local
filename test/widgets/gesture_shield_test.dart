@@ -295,7 +295,7 @@ void main() {
             ),
             child: Builder(
               builder: (context) {
-                value = GestureShield.guardHeightOf(context, percent);
+                value = ReaderBottomGuard.heightOf(context, percent);
                 return const SizedBox();
               },
             ),
@@ -318,11 +318,12 @@ void main() {
         await tester.pumpWidget(
           MaterialApp(
             home: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => tapped = true,
               child: const Stack(
                 children: [
                   SizedBox.expand(),
-                  GestureShield(height: 100),
+                  ReaderBottomGuard(height: 100),
                 ],
               ),
             ),

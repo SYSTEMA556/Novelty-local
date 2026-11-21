@@ -170,7 +170,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
     final settingsValue = settings.value;
     final isVertical = settingsValue?.isVertical ?? false;
     // 画面の下に空けておく、触っても何も起きない帯の高さ
-    final guardHeight = GestureShield.guardHeightOf(
+    final guardHeight = ReaderBottomGuard.heightOf(
       context,
       settingsValue?.bottomGuardPercent ?? 10,
     );
@@ -291,7 +291,7 @@ class LocalTextReaderPage extends HookConsumerWidget {
             ),
             // 下の帯：戻る・ホームのボタンを押すときに、ページ送りや
             // シークバーに触れないようにする（帯の高さは設定で変えられる）
-            GestureShield(height: guardHeight),
+            ReaderBottomGuard(height: guardHeight),
             // シークバーは帯のすぐ上に置く
             Positioned(
               left: 0,
