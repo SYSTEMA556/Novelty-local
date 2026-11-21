@@ -279,4 +279,60 @@ void main() {
       expect(gestureDetector.onHorizontalDragEnd, isNull);
     });
   });
+
+    group('下の帯（フォークで追加）', () {
+      Future<double> guardOf(
+        WidgetTester tester, {
+        required int percent,
+        double systemBottom = 0,
+      }) async {
+        late double value;
+        await tester.pumpWidget(
+          MediaQuery(
+            data: MediaQueryData(
+              size: const Size(400, 800),
+              viewPadding: EdgeInsets.only(bottom: systemBottom),
+            ),
+            child: Builder(
+              builder: (context) {
+                value = GestureShield.guardHeightOf(context, percent);
+                return const SizedBox();
+              },
+            ),
+          ),
+        );
+        return value;
+      }
+
+      testWidgets('画面の高さの割合で決まる', (tester) async {
+        expect(await guardOf(tester, percent: 10), 80);
+      });
+
+      testWidgets('システムのボタンの領域より低くはしない', (tester) async {
+        expect(await guardOf(tester, percent: 5, systemBottom: 48), 48);
+        expect(await guardOf(tester, percent: 0, systemBottom: 48), 48);
+      });
+
+      testWidgets('帯の中のタップは、下の画面に届かない', (tester) async {
+        var tapped = false;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: GestureDetector(
+              onTap: () => tapped = true,
+              child: const Stack(
+                children: [
+                  SizedBox.expand(),
+                  GestureShield(height: 100),
+                ],
+              ),
+            ),
+          ),
+        );
+        final size = tester.getSize(find.byType(Stack).first);
+        await tester.tapAt(Offset(size.width / 2, size.height - 20));
+        expect(tapped, isFalse);
+        await tester.tapAt(Offset(size.width / 2, 100));
+        expect(tapped, isTrue);
+      });
+    });
 }

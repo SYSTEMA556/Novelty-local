@@ -32,6 +32,7 @@ class AppSettings {
     this.tapZoneReversed = false,
     this.tapZoneDisablePrevious = false,
     this.tapZoneGuideOpacity = 0,
+    this.bottomGuardPercent = 10,
     this.localGridEnabled = false,
     this.localGridColumns = 3,
     this.localGridShowNames = true,
@@ -113,6 +114,13 @@ class AppSettings {
   /// ページボタンの領域を本文の上に薄く表示する濃さ（%。0 で非表示）。
   final int tapZoneGuideOpacity;
 
+  /// 読書画面の下に空けておく、触っても何も起きない帯の高さ
+  /// （画面の高さに対する%。0 で空けない）。フォークで追加。
+  ///
+  /// Android の戻る・ホームのボタンやジェスチャーを使うときに、
+  /// 誤ってページが進んだりシークバーが動いたりしないようにする。
+  final int bottomGuardPercent;
+
   /// ローカル作品の一覧をグリッドで表示するか。
   final bool localGridEnabled;
 
@@ -159,6 +167,7 @@ class AppSettings {
     bool? tapZoneReversed,
     bool? tapZoneDisablePrevious,
     int? tapZoneGuideOpacity,
+    int? bottomGuardPercent,
     bool? localGridEnabled,
     int? localGridColumns,
     bool? localGridShowNames,
@@ -188,6 +197,7 @@ class AppSettings {
       tapZoneDisablePrevious:
           tapZoneDisablePrevious ?? this.tapZoneDisablePrevious,
       tapZoneGuideOpacity: tapZoneGuideOpacity ?? this.tapZoneGuideOpacity,
+      bottomGuardPercent: bottomGuardPercent ?? this.bottomGuardPercent,
       localGridEnabled: localGridEnabled ?? this.localGridEnabled,
       localGridColumns: localGridColumns ?? this.localGridColumns,
       localGridShowNames: localGridShowNames ?? this.localGridShowNames,
@@ -221,6 +231,7 @@ class Settings extends _$Settings {
   static const _tapZoneReversedKey = 'tap_zone_reversed';
   static const _tapZoneDisablePreviousKey = 'tap_zone_disable_previous';
   static const _tapZoneGuideOpacityKey = 'tap_zone_guide_opacity';
+  static const _bottomGuardPercentKey = 'bottom_guard_percent';
   static const _localGridEnabledKey = 'local_grid_enabled';
   static const _localGridColumnsKey = 'local_grid_columns';
   static const _localGridShowNamesKey = 'local_grid_show_names';
@@ -283,6 +294,7 @@ class Settings extends _$Settings {
         await repo.getBool(_tapZoneDisablePreviousKey) ?? false;
     final tapZoneGuideOpacity =
         await repo.getInt(_tapZoneGuideOpacityKey) ?? 0;
+    final bottomGuardPercent = await repo.getInt(_bottomGuardPercentKey) ?? 10;
     final localGridEnabled = await repo.getBool(_localGridEnabledKey) ?? false;
     final localGridColumns = await repo.getInt(_localGridColumnsKey) ?? 3;
     final localGridShowNames =
@@ -312,6 +324,7 @@ class Settings extends _$Settings {
       tapZoneReversed: tapZoneReversed,
       tapZoneDisablePrevious: tapZoneDisablePrevious,
       tapZoneGuideOpacity: tapZoneGuideOpacity,
+      bottomGuardPercent: bottomGuardPercent,
       localGridEnabled: localGridEnabled,
       localGridColumns: localGridColumns,
       localGridShowNames: localGridShowNames,
@@ -400,6 +413,13 @@ class Settings extends _$Settings {
       tapZoneDisablePrevious: disablePrevious,
       tapZoneGuideOpacity: guideOpacity,
     ),
+  );
+
+  /// 読書画面の下に空けておく帯の高さ（%）を保存する。
+  Future<void> setBottomGuardPercent(int percent) => _save(
+    'bottom guard',
+    (repo) => repo.setInt(_bottomGuardPercentKey, percent),
+    (s) => s.copyWith(bottomGuardPercent: percent),
   );
 
   /// ローカル作品のグリッド表示の設定をまとめて保存する。

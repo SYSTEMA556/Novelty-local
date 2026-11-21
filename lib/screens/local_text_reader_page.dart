@@ -169,6 +169,11 @@ class LocalTextReaderPage extends HookConsumerWidget {
     final isAppBarVisible = useState(false);
     final settingsValue = settings.value;
     final isVertical = settingsValue?.isVertical ?? false;
+    // 画面の下に空けておく、触っても何も起きない帯の高さ
+    final guardHeight = GestureShield.guardHeightOf(
+      context,
+      settingsValue?.bottomGuardPercent ?? 10,
+    );
     final mode = readingModeKey(
       isVertical: isVertical,
       isPageFlip: settingsValue?.isPageFlip ?? false,
@@ -274,23 +279,27 @@ class LocalTextReaderPage extends HookConsumerWidget {
           children: [
             SafeArea(
               top: !isAppBarVisible.value,
-              // 本文に重ならないよう、下にページ表示・シークバーの場所を取る
+              bottom: false,
+              // 本文に重ならないよう、下にページ表示・シークバーと、
+              // 触っても何も起きない帯の場所を取る
               child: Column(
                 children: [
                   Expanded(child: body),
-                  const SizedBox(height: ReaderPositionBar.height),
+                  SizedBox(height: ReaderPositionBar.height + guardHeight),
                 ],
               ),
             ),
-            // 縦書きモード時、ホームジェスチャーとの競合を防ぐ
-            if (isVertical) const GestureShield(),
-            // シークバーはシールドより上に置く（下に置くと指で動かせない）
+            // 下の帯：戻る・ホームのボタンを押すときに、ページ送りや
+            // シークバーに触れないようにする（帯の高さは設定で変えられる）
+            GestureShield(height: guardHeight),
+            // シークバーは帯のすぐ上に置く
             Positioned(
               left: 0,
               right: 0,
-              bottom: 0,
+              bottom: guardHeight,
               child: SafeArea(
                 top: false,
+                bottom: false,
                 child: ReaderPositionBar(
                   navigation: navigation,
                   isVertical: isVertical,
@@ -304,9 +313,10 @@ class LocalTextReaderPage extends HookConsumerWidget {
               Positioned(
                 left: 16,
                 right: 16,
-                bottom: ReaderPositionBar.height + 8,
+                bottom: guardHeight + ReaderPositionBar.height + 8,
                 child: SafeArea(
                   top: false,
+                  bottom: false,
                   child: ReadAloudBar(controller: readAloud),
                 ),
               ),

@@ -669,6 +669,31 @@ class ReaderSettingsPage extends ConsumerWidget {
             ),
           ),
         ],
+        // 画面の下の、触っても何も起きない帯（フォークで追加）
+        ListTile(
+          title: Text(
+            settings.bottomGuardPercent == 0
+                ? '画面下の誤操作よけ: なし'
+                : '画面下の誤操作よけ: 下から${settings.bottomGuardPercent}%',
+          ),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('戻る・ホームのボタンを押すときに、ページ送りやシークバーが反応しないようにします'),
+              Slider(
+                value: settings.bottomGuardPercent.clamp(0, 20).toDouble(),
+                max: 20,
+                divisions: 20,
+                label: '${settings.bottomGuardPercent}%',
+                onChanged: (value) => unawaited(
+                  ref
+                      .read(settingsProvider.notifier)
+                      .setBottomGuardPercent(value.round()),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
     );
   }

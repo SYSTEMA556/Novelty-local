@@ -457,15 +457,26 @@ class NovelPage extends HookConsumerWidget {
               ),
                   ),
                   // 今の話の中のページ（位置）とシークバー
-                  SafeArea(
-                    top: false,
-                    child: ReaderPositionBar(
-                      key: ValueKey(currentEpisode.value),
-                      navigation: navigationFor(currentEpisode.value),
-                      isVertical: settings.isVertical,
-                      isPageFlip: settings.isPageFlip,
-                      textColor: settings.colorTheme.text,
-                    ),
+                  ReaderPositionBar(
+                    key: ValueKey(currentEpisode.value),
+                    navigation: navigationFor(currentEpisode.value),
+                    isVertical: settings.isVertical,
+                    isPageFlip: settings.isPageFlip,
+                    textColor: settings.colorTheme.text,
+                  ),
+                  // 下の帯：戻る・ホームのボタンを押すときに、ページ送りや
+                  // シークバーに触れないようにする（帯の高さは設定で変えられる）
+                  Builder(
+                    builder: (context) {
+                      final guard = GestureShield.guardHeightOf(
+                        context,
+                        settings.bottomGuardPercent,
+                      );
+                      return SizedBox(
+                        height: guard,
+                        child: Stack(children: [GestureShield(height: guard)]),
+                      );
+                    },
                   ),
                 ],
               ),
