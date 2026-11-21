@@ -168,6 +168,25 @@ void main() {
       expect(controller.currentSegment?.text, '天音は笑った。');
     });
 
+    test('別の読み上げを始めると、前の読み上げは止まる', () async {
+      final first = ReadAloudController(
+        document: _doc('一文目。'),
+        engine: _FakeEngine(),
+      );
+      final second = ReadAloudController(
+        document: _doc('二文目。'),
+        engine: _FakeEngine(),
+      );
+      addTearDown(first.dispose);
+      addTearDown(second.dispose);
+      unawaited(first.playFrom(0));
+      await pumpEventQueue();
+      unawaited(second.playFrom(0));
+      await pumpEventQueue();
+      expect(first.status, ReadAloudStatus.stopped);
+      expect(second.isPlaying, isTrue);
+    });
+
     test('題名のある読み上げだけ、始めたことを知らせる', () async {
       final started = <ReadAloudController>[];
       final disposed = <ReadAloudController>[];

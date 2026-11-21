@@ -6,6 +6,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/models/episode.dart';
 import 'package:novelty/models/novel_info.dart';
+import 'package:novelty/local_library/read_aloud_playlist.dart';
+import 'package:novelty/read_aloud/playlist_player.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/reading_dictionary.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
@@ -240,7 +242,19 @@ class NovelPage extends HookConsumerWidget {
         // 1話読み終えたら、画面も次の話へ送って続きを読む
         advanceRef.value = () {
           final ep = readingEpisode.value;
-          if (ep == null || ep >= totalEpisodes) return;
+          if (ep == null) return;
+          if (ep >= totalEpisodes) {
+            // 最終話まで読んだ。連続再生リストに入っていれば、次の作品へ
+            unawaited(() async {
+              final entry = WebPlaylistEntry(source, workId);
+              final keys = await ref.read(readAloudPlaylistProvider.future);
+              if (nextInPlaylist(keys, entry.key) == null) return;
+              await ref
+                  .read(playlistPlayerProvider.notifier)
+                  .continueAfter(entry);
+            }());
+            return;
+          }
           if (currentEpisode.value == ep && pageController.hasClients) {
             unawaited(
               pageController.nextPage(

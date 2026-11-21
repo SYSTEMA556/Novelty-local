@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:novelty/local_library/read_aloud_playlist.dart';
 import 'package:novelty/models/download_result.dart';
 import 'package:novelty/models/episode.dart';
 import 'package:novelty/models/novel_info.dart';
@@ -60,6 +61,25 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
     }
   }
 
+  // 連続再生リストでのこの作品（フォークで追加）
+  WebPlaylistEntry get _playlistEntry =>
+      WebPlaylistEntry(widget.source, widget.workId);
+
+  /// 連続再生リストに入れる・外す（フォークで追加）。
+  Future<void> _togglePlaylist({required bool inPlaylist}) async {
+    final notifier = ref.read(readAloudPlaylistProvider.notifier);
+    final key = _playlistEntry.key;
+    await (inPlaylist ? notifier.remove(key) : notifier.add(key));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          inPlaylist ? '連続再生リストから外しました' : '連続再生リストに追加しました',
+        ),
+      ),
+    );
+  }
+
   Future<void> _copyNovelInfo(String? title, String url) async {
     final messenger = ScaffoldMessenger.of(context);
     await copyTextToClipboard('${title ?? ''}\n$url');
@@ -91,6 +111,9 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
     final novelInfoAsync = ref.watch(
       novelInfoWithCacheProvider(widget.source, widget.workId),
     );
+    // 連続再生リストに入っているか（フォークで追加）
+    final inPlaylist = (ref.watch(readAloudPlaylistProvider).value ?? const [])
+        .contains(_playlistEntry.key);
     ref.listen(novelInfoWithCacheProvider(widget.source, widget.workId), (
       previous,
       next,
@@ -282,6 +305,10 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
                 ),
                 PopupMenuButton<String>(
                   onSelected: (value) {
+                    if (value == 'playlist') {
+                      unawaited(_togglePlaylist(inPlaylist: inPlaylist));
+                      return;
+                    }
                     if (value == 'download') {
                       if (isOfflineMode) {
                         showOfflineDisabledSnackBar(context);
@@ -292,6 +319,25 @@ class _NovelDetailPageState extends ConsumerState<NovelDetailPage> {
                   },
                   itemBuilder: (context) {
                     return [
+                      // 連続再生リスト（フォークで追加）
+                      PopupMenuItem(
+                        value: 'playlist',
+                        child: Row(
+                          children: [
+                            Icon(
+                              inPlaylist
+                                  ? Icons.playlist_remove
+                                  : Icons.playlist_add,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              inPlaylist
+                                  ? '連続再生リストから外す'
+                                  : '連続再生リストに追加',
+                            ),
+                          ],
+                        ),
+                      ),
                       PopupMenuItem(
                         value: 'download',
                         child: Row(

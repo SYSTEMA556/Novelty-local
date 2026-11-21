@@ -229,6 +229,10 @@ class ReadAloudController extends ChangeNotifier {
   /// 後始末のときに呼ばれる（通知・車のボタンとの接続を外すのに使う）。
   static void Function(ReadAloudController controller)? onDisposed;
 
+  // 今読んでいる読み上げ。音声エンジンは端末に1つなので、別の読み上げを
+  // 始めたら前のものは止める（読書画面と連続再生が同時に鳴らないように）
+  static ReadAloudController? _active;
+
   /// 通知・ロック画面・車の画面に出す題名（null なら出さない）。
   final String? mediaTitle;
 
@@ -356,6 +360,16 @@ class ReadAloudController extends ChangeNotifier {
     await _engine.stop();
   }
 
+  // 別の読み上げに譲って止まる。音声エンジンの停止は呼ばない
+  // （エンジンは端末で共有しているので、新しい読み上げの声まで止めてしまう）
+  void _yieldTo() {
+    if (_status == ReadAloudStatus.stopped) return;
+    _generation++;
+    _status = ReadAloudStatus.stopped;
+    _reportPosition();
+    notifyListeners();
+  }
+
   /// 次の文へ進む。
   Future<void> next() => _jump(_index + 1);
 
@@ -390,6 +404,9 @@ class ReadAloudController extends ChangeNotifier {
   Future<void> _restart() async {
     if (document.segments.isEmpty) return;
     final generation = ++_generation;
+    final previous = _active;
+    if (previous != null && !identical(previous, this)) previous._yieldTo();
+    _active = this;
     _status = ReadAloudStatus.playing;
     _finished = false;
     if (mediaTitle != null) onStartedPlaying?.call(this);
@@ -475,6 +492,7 @@ class ReadAloudController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (identical(_active, this)) _active = null;
     onDisposed?.call(this);
     _generation++;
     unawaited(_engine.dispose());

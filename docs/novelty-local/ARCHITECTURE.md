@@ -134,6 +134,12 @@ Web 小説の話ごとの位置は `reader/web_positions.json`（`utils/web_read
 - **連続再生は build の外で進める**：画面が消えている間は Flutter がフレームを作らず、build が走りません。
   そこで、次の作品の読み込み・解析・読み上げの作成と開始を `LocalWorkReaderPage` のコールバックの中で行い、
   できた読み上げを `LocalTextReaderPage(sharedReadAloud: …)` に渡します。
+- **連続再生リストは画面を開かずに流す**：`PlaylistPlayer`（Riverpod の `Notifier`）が、ローカルの作品と Web 小説を
+  読み込み、読み上げを作って始め、読み終えたら次の作品・次の話へ進みます。
+  - Web 小説は、閲覧履歴の「最後に読んだ話」から最終話まで読みます。話を進めるたびに履歴も進めます。
+  - リストの鍵は、ローカルは作品 ID、Web は `web:<サイト>:<作品 ID>` です。前の版のリスト（ID だけ）もそのまま読めます。
+  - 端末の声は1つなので、`ReadAloudController` は新しい読み上げが始まると前のものを止めます。
+    このときエンジンの停止は呼びません（新しい読み上げの声まで止まるため）。
 - `MainActivity` は `AudioServiceActivity` を継承します。FlutterEngine がキャッシュされ、Activity より長く生きるので、
   `VoicevoxBridge` は companion object でアプリ全体に1つだけ持ち、Activity が作り直されても使い回します。
 

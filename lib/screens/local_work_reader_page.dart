@@ -15,6 +15,7 @@ import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/read_aloud_playlist.dart';
+import 'package:novelty/read_aloud/playlist_player.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/local_text_reader_page.dart';
@@ -120,16 +121,15 @@ class LocalWorkReaderPage extends HookConsumerWidget {
       }
     }
 
-    // 連続再生リストの次の作品へ進む
+    // 連続再生リストに入っている作品なら、次の作品（ローカル・Web 小説の
+    // どちらでも）を連続再生の係に渡して続ける。画面は今の作品のまま
     continueRef.value = (finished) {
       unawaited(() async {
         final playlist = await ref.read(readAloudPlaylistProvider.future);
-        final nextId = nextInPlaylist(playlist, finished.id);
-        if (nextId == null) return;
-        final works = await ref.read(localWorksProvider.future);
-        final next = works.where((w) => w.id == nextId).firstOrNull;
-        if (next == null) return;
-        await load(next, play: true, announcement: '次は、${next.title}');
+        if (nextInPlaylist(playlist, finished.id) == null) return;
+        await ref
+            .read(playlistPlayerProvider.notifier)
+            .continueAfter(LocalPlaylistEntry(finished.id));
       }());
     };
 

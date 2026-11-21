@@ -1,13 +1,63 @@
 /// 連続再生リスト（フォークで追加）。
 ///
-/// 作品 ID の並びだけを `playlist.json` に持つ。本棚から消えた作品はリストに
-/// 残っていても無視する（表示・再生の時点で取り除く）。
+/// 作品の鍵の並びだけを `playlist.json` に持つ。
+/// - ローカル本棚の作品：作品 ID そのもの（例：`1a2b3c4d`）
+/// - Web 小説：`web:<サイト>:<作品 ID>`（例：`web:narou:n1234ab`）
+///
+/// 本棚から消えた作品はリストに残っていても無視する（表示・再生の時点で取り除く）。
+/// Web 小説の題名は保存せず、表示のときに作品情報のキャッシュから引く。
 library;
 
 import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
+import 'package:novelty/sites/novel_source.dart';
+
+/// 連続再生リストの1件。
+sealed class PlaylistEntry {
+  const PlaylistEntry();
+
+  /// 保存に使う鍵から作る。読めない鍵は null。
+  static PlaylistEntry? parse(String key) {
+    if (!key.startsWith('web:')) return LocalPlaylistEntry(key);
+    final parts = key.split(':');
+    if (parts.length < 3) return null;
+    final source = NovelSource.values.where((s) => s.name == parts[1]);
+    if (source.isEmpty) return null;
+    return WebPlaylistEntry(source.first, parts.sublist(2).join(':'));
+  }
+
+  /// 保存に使う鍵。
+  String get key;
+}
+
+/// ローカル本棚の作品。
+final class LocalPlaylistEntry extends PlaylistEntry {
+  /// コンストラクタ。
+  const LocalPlaylistEntry(this.workId);
+
+  /// 本棚の作品 ID。
+  final String workId;
+
+  @override
+  String get key => workId;
+}
+
+/// Web 小説（なろう・カクヨム）の作品。
+final class WebPlaylistEntry extends PlaylistEntry {
+  /// コンストラクタ。
+  const WebPlaylistEntry(this.source, this.workId);
+
+  /// サイト。
+  final NovelSource source;
+
+  /// サイトでの作品 ID（なろうなら ncode）。
+  final String workId;
+
+  @override
+  String get key => 'web:${source.name}:$workId';
+}
 
 /// 連続再生リストで [currentId] の次に読む作品の ID。
 ///
