@@ -76,7 +76,7 @@ EpubText readEpub(List<int> bytes) {
 
   // 目録の項目（id → ファイルの場所）
   final manifest = <String, String>{};
-  for (final m in RegExp('<(?:[a-z]+:)?item\\b[^>]*>').allMatches(opf)) {
+  for (final m in RegExp(r'<(?:[a-z]+:)?item\b[^>]*>').allMatches(opf)) {
     final tag = m[0]!;
     final id = _attr(tag, 'id');
     final href = _attr(tag, 'href');
@@ -84,7 +84,7 @@ EpubText readEpub(List<int> bytes) {
   }
   // 読む順番
   final spine = [
-    for (final m in RegExp('<(?:[a-z]+:)?itemref\\b[^>]*>').allMatches(opf))
+    for (final m in RegExp(r'<(?:[a-z]+:)?itemref\b[^>]*>').allMatches(opf))
       ?_attr(m[0]!, 'idref'),
   ];
 

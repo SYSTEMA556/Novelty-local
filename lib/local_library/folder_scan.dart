@@ -198,7 +198,7 @@ bool isImportableBook(String path) {
 
 /// 元のファイルを読んだ結果。
 ///
-/// [title]・[author] は EPUB の目録に書かれていたもの（テキストなら null）。
+/// title・author は EPUB の目録に書かれていたもの（テキストなら null）。
 typedef SourceText = ({
   String text,
   bool nonUtf8,
