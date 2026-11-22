@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:novelty/local_library/folder_scan.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -26,7 +27,7 @@ Future<void> showLocalImportSheet(BuildContext context, WidgetRef ref) {
           ListTile(
             leading: const Icon(Icons.folder_open),
             title: const Text('フォルダを選んで取り込む'),
-            subtitle: const Text('フォルダ内（サブフォルダ含む）の .txt をすべて取り込みます'),
+            subtitle: const Text('フォルダ内（サブフォルダ含む）の .txt・.epub をすべて取り込みます'),
             onTap: () async {
               Navigator.pop(sheetContext);
               await importFromFolder(context, ref);
@@ -56,7 +57,7 @@ Future<void> showLocalImportSheet(BuildContext context, WidgetRef ref) {
   );
 }
 
-/// フォルダを選び、中の .txt をすべて取り込む。
+/// フォルダを選び、中の .txt・.epub をすべて取り込む。
 Future<void> importFromFolder(BuildContext context, WidgetRef ref) async {
   if (!await _ensureStoragePermission()) {
     if (context.mounted) {
@@ -85,7 +86,9 @@ Future<void> importFromFolder(BuildContext context, WidgetRef ref) async {
   }
 
   if (paths.isEmpty) {
-    if (context.mounted) _showSnackBar(context, 'このフォルダに .txt ファイルが見つかりませんでした');
+    if (context.mounted) {
+      _showSnackBar(context, 'このフォルダに .txt・.epub ファイルが見つかりませんでした');
+    }
     return;
   }
   // フォルダを覚えておき、あとで「再スキャン」できるようにする
@@ -226,9 +229,9 @@ Future<void> showRescanSheet(BuildContext context, WidgetRef ref) async {
 Future<void> importFromFiles(BuildContext context, WidgetRef ref) async {
   final result = await FilePicker.platform.pickFiles(
     type: FileType.custom,
-    allowedExtensions: ['txt'],
+    allowedExtensions: ['txt', 'epub'],
     allowMultiple: true,
-    dialogTitle: '取り込むテキストファイルを選択',
+    dialogTitle: '取り込むテキスト・EPUB を選択',
   );
   if (result == null) return;
 
@@ -436,11 +439,11 @@ Future<void> _showResultDialog(
   );
 }
 
-/// フォルダ内（サブフォルダ含む）の .txt を名前順で列挙する。
+/// フォルダ内（サブフォルダ含む）の .txt・.epub を名前順で列挙する。
 Future<List<String>> _listTextFiles(Directory dir) async {
   final paths = <String>[];
   await for (final entity in dir.list(recursive: true, followLinks: false)) {
-    if (entity is File && entity.path.toLowerCase().endsWith('.txt')) {
+    if (entity is File && isImportableBook(entity.path)) {
       paths.add(entity.path);
     }
   }

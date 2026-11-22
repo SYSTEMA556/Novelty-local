@@ -11,6 +11,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:novelty/local_library/epub_text.dart';
 import 'package:novelty/local_library/local_library_store.dart';
 import 'package:novelty/local_library/meta_rules.dart';
 import 'package:novelty/local_library/work_meta_detector.dart';
@@ -91,7 +92,7 @@ List<ScannedFile> listFolder(String dirPath) {
     recursive: true,
     followLinks: false,
   )) {
-    if (entity is File && entity.path.toLowerCase().endsWith('.txt')) {
+    if (entity is File && isImportableBook(entity.path)) {
       entries.add((entity.path, entity.statSync()));
     }
   }
@@ -189,8 +190,22 @@ class UpdatedText {
   final WorkMeta meta;
 }
 
+/// 本棚に取り込めるファイルか（.txt と .epub。フォークで EPUB を追加）。
+bool isImportableBook(String path) {
+  final lower = path.toLowerCase();
+  return lower.endsWith('.txt') || lower.endsWith('.epub');
+}
+
 /// 元のファイルを読んだ結果。
-typedef SourceText = ({String text, bool nonUtf8, bool converted});
+///
+/// [title]・[author] は EPUB の目録に書かれていたもの（テキストなら null）。
+typedef SourceText = ({
+  String text,
+  bool nonUtf8,
+  bool converted,
+  String? title,
+  String? author,
+});
 
 /// 元のファイルを読む（UTF-8 以外の文字コードも読む）。
 ///
@@ -198,6 +213,17 @@ typedef SourceText = ({String text, bool nonUtf8, bool converted});
 /// （読めない文字が1つでもあるときは、元の中身を失わないよう書き直さない。
 /// 書き込めない場所のファイルもそのまま）。
 SourceText readSourceText(String path, {bool convertSource = false}) {
+  // EPUB は中の本文を取り出す（元のファイルは書き直さない）
+  if (path.toLowerCase().endsWith('.epub')) {
+    final epub = readEpub(File(path).readAsBytesSync());
+    return (
+      text: epub.text,
+      nonUtf8: false,
+      converted: false,
+      title: epub.title,
+      author: epub.author,
+    );
+  }
   final decoded = PlainTextNovelParser.decodeDetailed(
     File(path).readAsBytesSync(),
   );
@@ -214,7 +240,13 @@ SourceText readSourceText(String path, {bool convertSource = false}) {
       if (tmp.existsSync()) tmp.deleteSync();
     }
   }
-  return (text: decoded.text, nonUtf8: nonUtf8, converted: converted);
+  return (
+    text: decoded.text,
+    nonUtf8: nonUtf8,
+    converted: converted,
+    title: null,
+    author: null,
+  );
 }
 
 /// [updateTexts] の結果。
@@ -250,11 +282,7 @@ UpdateTextsResult updateTexts(
         UpdatedText(
           id: file.id,
           charCount: text.length,
-          meta: WorkMetaDetector.detect(
-            fileName: fileName,
-            head: text,
-            rules: rules,
-          ),
+          meta: metaOfSource(source, fileName, text, rules),
         ),
       );
     } on Object {
@@ -296,4 +324,21 @@ ConvertFolderResult convertFolderToUtf8(String dirPath) {
     }
   }
   return (converted: converted, nonUtf8: nonUtf8, signatures: signatures);
+}
+
+/// 作品名・作者を決める。EPUB の目録に書かれていればそれを使う。
+WorkMeta metaOfSource(
+  SourceText source,
+  String fileName,
+  String text,
+  MetaRuleSet rules,
+) {
+  final detected = WorkMetaDetector.detect(
+    fileName: fileName,
+    head: text,
+    rules: rules,
+  );
+  final title = source.title;
+  if (title == null) return detected;
+  return WorkMeta(title: title, author: source.author ?? detected.author);
 }

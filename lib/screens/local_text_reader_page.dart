@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:narou_parser/narou_parser.dart';
+import 'package:novelty/local_library/epub_text.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
@@ -34,8 +35,8 @@ Future<void> openLocalTextFile(BuildContext context) async {
   try {
     result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['txt'],
-      dialogTitle: 'テキストファイルを選択',
+      allowedExtensions: ['txt', 'epub'],
+      dialogTitle: 'テキスト・EPUB を選択',
       // パスを持たないプラットフォーム（Web等）でも読めるよう内容を直接受け取る
       withData: true,
     );
@@ -62,13 +63,18 @@ Future<void> openLocalTextFile(BuildContext context) async {
   );
   final List<NovelContentElement> elements;
   try {
+    // EPUB は中の本文を取り出す（ルビは「｜漢字《かんじ》」の形になる）
+    final isEpub = picked.name.toLowerCase().endsWith('.epub');
     elements = PlainTextNovelParser.parse(
-      PlainTextNovelParser.decode(bytes),
+      isEpub ? readEpub(bytes).text : PlainTextNovelParser.decode(bytes),
       clean: options.cleanMarkup,
       unifyWidth: options.unifyWidth,
       removeOcrNoise: options.removeOcrNoise,
     );
   } on UnsupportedTextEncodingException catch (e) {
+    if (context.mounted) _showError(context, e.toString());
+    return;
+  } on EpubFormatException catch (e) {
     if (context.mounted) _showError(context, e.toString());
     return;
   } finally {

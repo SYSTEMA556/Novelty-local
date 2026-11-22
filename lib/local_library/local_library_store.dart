@@ -672,11 +672,7 @@ List<ImportItemResult> importBatch(
       final source = readSourceText(path, convertSource: convertSource);
       final text = source.text;
       File(p.join(textsDirPath, '$id.txt')).writeAsStringSync(text);
-      final meta = WorkMetaDetector.detect(
-        fileName: fileName,
-        head: text,
-        rules: rules,
-      );
+      final meta = metaOfSource(source, fileName, text, rules);
       results.add(
         ImportItemResult.added(
           LocalWork(
@@ -713,7 +709,9 @@ List<LocalWork> refreshWorkMeta(
 }) {
   return [
     for (final work in works)
+      // EPUB は目録の題名・著者を使うので、ファイル名から読み直さない
       if (work.manualMeta ||
+          work.fileName.toLowerCase().endsWith('.epub') ||
           (!force && work.metaVersion >= LocalWork.currentMetaVersion))
         work
       else
