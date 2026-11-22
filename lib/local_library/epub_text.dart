@@ -152,7 +152,8 @@ String xhtmlToText(String xhtml) {
   void walk(dom.Node node) {
     if (node is dom.Text) {
       // XHTML の中の改行・字下げは、見た目の改行ではない
-      out.write(node.text.replaceAll(RegExp(r'[\r\n\t]+'), ''));
+      // （改行と、その後ろの半角の字下げを消す。全角の字下げは本文なので残す）
+      out.write(node.text.replaceAll(RegExp(r'[\r\n]+[ \t]*|\t'), ''));
       return;
     }
     if (node is! dom.Element) {
