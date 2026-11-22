@@ -102,11 +102,25 @@ class _TextOptionsSheet extends ConsumerWidget {
               onChanged: (v) =>
                   unawaited(notifier.save(options.copyWith(unifyWidth: v))),
             ),
+            SwitchListTile(
+              title: const Text('崩れたルビ・傍点の行を消す'),
+              subtitle: Text(
+                [
+                  '自炊（スキャンして文字を読み取った）本で、ルビや傍点が',
+                  '「、　！　｜」のような記号の切れ端の行になっていたら消します。',
+                  '「……」「――」だけの行や台詞は消しません。',
+                ].join(),
+              ),
+              value: options.removeOcrNoise,
+              onChanged: (v) => unawaited(
+                notifier.save(options.copyWith(removeOcrNoise: v)),
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
               child: Text(
                 [
-                  '本文の掃除・表記ゆれは、次に作品を開いたときから反映されます。',
+                  '本文の掃除・表記ゆれ・ルビの行は、次に作品を開いたときから反映されます。',
                   '元のファイルや本棚の中身は変えません。',
                   '切り替えると、しおりの位置が少しずれることがあります。',
                 ].join(),

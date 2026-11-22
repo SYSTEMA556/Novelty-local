@@ -66,6 +66,7 @@ Future<void> openLocalTextFile(BuildContext context) async {
       PlainTextNovelParser.decode(bytes),
       clean: options.cleanMarkup,
       unifyWidth: options.unifyWidth,
+      removeOcrNoise: options.removeOcrNoise,
     );
   } on UnsupportedTextEncodingException catch (e) {
     if (context.mounted) _showError(context, e.toString());

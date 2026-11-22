@@ -263,6 +263,7 @@ class LocalTextOptions {
     this.convertSourceToUtf8 = false,
     this.cleanMarkup = true,
     this.unifyWidth = false,
+    this.removeOcrNoise = false,
   });
 
   /// JSONから生成する。
@@ -271,6 +272,7 @@ class LocalTextOptions {
       convertSourceToUtf8: json['convertSourceToUtf8'] as bool? ?? false,
       cleanMarkup: json['cleanMarkup'] as bool? ?? true,
       unifyWidth: json['unifyWidth'] as bool? ?? false,
+      removeOcrNoise: json['removeOcrNoise'] as bool? ?? false,
     );
   }
 
@@ -283,11 +285,15 @@ class LocalTextOptions {
   /// 読むとき、全角英数字を半角に、半角カナを全角にそろえるか。
   final bool unifyWidth;
 
+  /// 読むとき、自炊した本の文字認識で崩れたルビ・傍点の行を消すか。
+  final bool removeOcrNoise;
+
   /// JSONに変換する。
   Map<String, dynamic> toJson() => {
     'convertSourceToUtf8': convertSourceToUtf8,
     'cleanMarkup': cleanMarkup,
     'unifyWidth': unifyWidth,
+    'removeOcrNoise': removeOcrNoise,
   };
 
   /// 一部を変えた設定を作る。
@@ -295,10 +301,12 @@ class LocalTextOptions {
     bool? convertSourceToUtf8,
     bool? cleanMarkup,
     bool? unifyWidth,
+    bool? removeOcrNoise,
   }) => LocalTextOptions(
     convertSourceToUtf8: convertSourceToUtf8 ?? this.convertSourceToUtf8,
     cleanMarkup: cleanMarkup ?? this.cleanMarkup,
     unifyWidth: unifyWidth ?? this.unifyWidth,
+    removeOcrNoise: removeOcrNoise ?? this.removeOcrNoise,
   );
 
   @override
@@ -306,8 +314,14 @@ class LocalTextOptions {
       other is LocalTextOptions &&
       other.convertSourceToUtf8 == convertSourceToUtf8 &&
       other.cleanMarkup == cleanMarkup &&
-      other.unifyWidth == unifyWidth;
+      other.unifyWidth == unifyWidth &&
+      other.removeOcrNoise == removeOcrNoise;
 
   @override
-  int get hashCode => Object.hash(convertSourceToUtf8, cleanMarkup, unifyWidth);
+  int get hashCode => Object.hash(
+    convertSourceToUtf8,
+    cleanMarkup,
+    unifyWidth,
+    removeOcrNoise,
+  );
 }

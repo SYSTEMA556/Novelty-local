@@ -171,11 +171,13 @@ Future<List<NovelContentElement>> parseInBackground(
 }) {
   final clean = options.cleanMarkup;
   final unifyWidth = options.unifyWidth;
+  final removeOcrNoise = options.removeOcrNoise;
   return Isolate.run(
     () => PlainTextNovelParser.parse(
       text,
       clean: clean,
       unifyWidth: unifyWidth,
+      removeOcrNoise: removeOcrNoise,
     ),
   );
 }

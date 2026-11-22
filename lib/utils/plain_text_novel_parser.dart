@@ -227,6 +227,43 @@ class PlainTextNovelParser {
     return lines;
   }
 
+  // 文字認識のくずとみなす記号（句読点・縦棒・点・ひげなど）
+  static final _noiseOnly = RegExp(
+    [
+      r'^[\s',
+      "、，,.．・･'’‘`´!！|｜¦:：;；丶ヽヾゝゞ〃゛゜ﾞﾟ‐ｰ_~～^＾”“-",
+      r']+$',
+    ].join(),
+  );
+  static final _spaces = RegExp(r'[\s　]+');
+  static final _kanaBits = RegExp(r'^[ぁ-ゖァ-ヺー、・!！|｜]+$');
+
+  /// 自炊した本の文字認識で、ルビや傍点が崩れてできた行か（フォークで追加）。
+  ///
+  /// 紙の本のルビ・傍点は、文字認識で本文とは別の行になり、
+  /// 「、　　！　｜　、」のように記号やかなの切れ端が間を空けて並ぶことがある。
+  /// 次のどちらかなら、くずの行とみなす。
+  /// - 記号（句読点・縦棒・点など）と空白だけでできている。
+  ///   ただし「・・・」「！！」のように、空白の無い同じ記号の並びは残す
+  /// - 2文字以下のかなの切れ端が、空白を挟んで3つ以上並んでいる
+  ///
+  /// 「……」「――」だけの行や、「」で囲んだ台詞の行は消さない。
+  static bool isOcrRubyNoise(String line) {
+    final trimmed = line.trim();
+    if (trimmed.isEmpty) return false;
+    if (_noiseOnly.hasMatch(trimmed)) {
+      final compact = trimmed.replaceAll(_spaces, '');
+      final sameRepeated =
+          !_spaces.hasMatch(trimmed) &&
+          compact.length >= 2 &&
+          compact.split('').toSet().length == 1;
+      return !sameRepeated;
+    }
+    final pieces = trimmed.split(_spaces);
+    return pieces.length >= 3 &&
+        pieces.every((p) => p.length <= 2 && _kanaBits.hasMatch(p));
+  }
+
   /// テキストを本文要素のリストに変換する。
   ///
   /// [clean] なら、先に [cleanMarkup] で HTML のタグや青空文庫の注記を取り除く。
@@ -236,12 +273,16 @@ class PlainTextNovelParser {
     String text, {
     bool clean = true,
     bool unifyWidth = false,
+    bool removeOcrNoise = false,
   }) {
     final widened = unifyWidth ? unifyTextWidth(text) : text;
     final normalized = clean
         ? cleanMarkup(widened)
         : widened.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    final lines = normalized.split('\n');
+    // 自炊（スキャン＋文字認識）で、ルビや傍点が崩れてできた行を消す
+    final lines = removeOcrNoise
+        ? normalized.split('\n').where((l) => !isOcrRubyNoise(l)).toList()
+        : normalized.split('\n');
     // 末尾の改行による空行は表示しない
     while (lines.isNotEmpty && lines.last.isEmpty) {
       lines.removeLast();
