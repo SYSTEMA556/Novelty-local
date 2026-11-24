@@ -16,6 +16,7 @@ import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/reading_dictionary.dart';
+import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/settings/reader_settings_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
@@ -119,9 +120,11 @@ ReadAloudController createLocalReadAloud({
   String? author,
   String? announcement,
   VoidCallback? onCompleted,
+  List<SpeechDirection>? directions,
 }) {
   return ReadAloudController(
     document: document,
+    directions: directions,
     mediaTitle: title,
     mediaSubtitle: author,
     dictionaryScope: workId == null
@@ -188,9 +191,10 @@ class LocalTextReaderPage extends HookConsumerWidget {
 
     // 読み上げ
     final positionsNotifier = ref.read(readingPositionsProvider.notifier);
+    // 親が読み上げを用意していれば、その文の分割を使う（作り直さない）
     final document = useMemoized(
-      () => SpeechDocument.fromElements(elements),
-      [elements],
+      () => sharedReadAloud?.document ?? SpeechDocument.fromElements(elements),
+      [elements, sharedReadAloud],
     );
     final ownReadAloud = useMemoized(
       () => sharedReadAloud == null

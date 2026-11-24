@@ -17,6 +17,7 @@ import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/local_library/read_aloud_playlist.dart';
 import 'package:novelty/read_aloud/playlist_player.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
+import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/screens/local_text_reader_page.dart';
 import 'package:novelty/utils/plain_text_novel_parser.dart';
@@ -92,12 +93,15 @@ class LocalWorkReaderPage extends HookConsumerWidget {
         final saved = await ref.read(readingPositionsProvider.future);
         final text = await store.readText(target.id);
         final options = await ref.read(localTextOptionsProvider.future);
-        // 長編でもUIが固まらないよう別Isolateで解析する
-        final elements = await parseInBackground(text, options: options);
+        // 長編でもUIが固まらないよう、本文の解析と読み上げの下ごしらえ
+        // （文の分割・演出の読み取り）をまとめて別Isolateで行う
+        final prepared = await prepareInBackground(text, options: options);
+        final elements = prepared.elements;
         if (!context.mounted) return;
-        final document = SpeechDocument.fromElements(elements);
+        final document = prepared.document;
         final controller = createLocalReadAloud(
           document: document,
+          directions: prepared.directions,
           title: target.title,
           author: target.author,
           workId: target.id,
@@ -181,3 +185,38 @@ Future<List<NovelContentElement>> parseInBackground(
     ),
   );
 }
+
+/// 本文の解析と、読み上げの下ごしらえの結果。
+typedef PreparedText = ({
+  List<NovelContentElement> elements,
+  SpeechDocument document,
+  List<SpeechDirection> directions,
+});
+
+/// 本文の解析・文の分割・演出の読み取りを、まとめて別Isolateで行う。
+///
+/// 数万文の長編では、文の分割と演出の読み取りだけでも画面が一瞬固まる
+/// 重さになるため、本文の解析と一緒に裏で済ませる。
+Future<PreparedText> prepareInBackground(
+  String text, {
+  LocalTextOptions options = const LocalTextOptions(),
+}) {
+  final clean = options.cleanMarkup;
+  final unifyWidth = options.unifyWidth;
+  final removeOcrNoise = options.removeOcrNoise;
+  return Isolate.run(() {
+    final elements = PlainTextNovelParser.parse(
+      text,
+      clean: clean,
+      unifyWidth: unifyWidth,
+      removeOcrNoise: removeOcrNoise,
+    );
+    final document = SpeechDocument.fromElements(elements);
+    return (
+      elements: elements,
+      document: document,
+      directions: SpeechDirector.direct(document),
+    );
+  });
+}
+

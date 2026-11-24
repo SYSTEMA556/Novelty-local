@@ -208,7 +208,9 @@ class ReadAloudController extends ChangeNotifier {
     this.dictionaryScope,
     ReadingDictionary? dictionary,
     String? announcement,
+    List<SpeechDirection>? directions,
   }) : _engine = engine ?? CompositeSpeechEngine(),
+       _givenDirections = directions,
        _dictionary = dictionary ?? ReadingDictionary.shared,
        _announcement = announcement;
 
@@ -268,10 +270,16 @@ class ReadAloudController extends ChangeNotifier {
   String? _dialogueVoice;
   int _prefetchAhead = 1;
 
-  /// 文ごとの演出（役割・感情・間）。初めて使うときに読み取る。
-  late final List<SpeechDirection> directions = SpeechDirector.direct(
-    document,
-  );
+  // 裏で前もって読み取った演出（長編で、読み始めに画面が固まらないように）
+  final List<SpeechDirection>? _givenDirections;
+
+  /// 文ごとの演出（役割・感情・間）。渡されていなければ、初めて使うときに
+  /// 読み取る。
+  late final List<SpeechDirection> directions =
+      _givenDirections != null &&
+          _givenDirections.length == document.segments.length
+      ? _givenDirections
+      : SpeechDirector.direct(document);
 
   /// 今の文の演出（文が無ければ null）。
   SpeechDirection? get currentDirection =>

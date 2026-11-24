@@ -217,6 +217,16 @@ class ReadingPositionsNotifier
     final current = state.value;
     if (current == null) return;
     final previous = current[workId];
+    // 同じ値の記録は捨てる（スクロールの通知などで同じ位置が何度も来るため。
+    // 状態を作り直すと、本棚など読書位置を見ている画面がすべて作り直される）
+    if (previous != null &&
+        (mode == null ||
+            offset == null ||
+            previous.offsets[mode] == offset) &&
+        (progress == null || _clamp01(progress) == previous.progress) &&
+        (ttsOffset == null || ttsOffset == previous.ttsOffset)) {
+      return;
+    }
     final offsets = {...?previous?.offsets};
     if (mode != null && offset != null) offsets[mode] = offset;
 

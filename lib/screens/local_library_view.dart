@@ -269,18 +269,36 @@ class LocalLibraryView extends HookConsumerWidget {
     final reader = ref.watch(kanjiReaderProvider).value;
 
     final allWorks = worksAsync.value;
+    // 並べ替え・絞り込みは作品数に比例して重い（数万件で目立つ）。
+    // - 読書位置は「最近読んだ順・おすすめ順」でしか使わないので、
+    //   それ以外の並びでは読書位置が変わっても並べ直さない
+    // - 読書位置は読んでいる間ひっきりなしに変わる（この画面は読書画面の下で
+    //   生きている）ので、並べ直すのは変化が落ち着いてから
+    // - 検索語は打ち終わるまで少し待つ
+    final usesPositions =
+        sort.value == LocalSort.recent || sort.value == LocalSort.picks;
+    final sortPositions = useDebounced(
+      usesPositions ? positions : const <String, ReadingPosition>{},
+      const Duration(seconds: 3),
+      immediateWhen: !usesPositions,
+    );
+    final debouncedQuery = useDebounced(
+      query.value,
+      const Duration(milliseconds: 250),
+      immediateWhen: query.value.isEmpty,
+    );
     final works = useMemoized(
       () => allWorks == null
           ? const <LocalWork>[]
           : filterAndSortWorks(
               allWorks,
-              positions,
-              query: query.value,
+              sortPositions,
+              query: debouncedQuery,
               sort: sort.value,
               profiles: profiles,
               reader: reader,
             ),
-      [allWorks, positions, query.value, sort.value, profiles, reader],
+      [allWorks, sortPositions, debouncedQuery, sort.value, profiles, reader],
     );
     // おすすめ順のときの順位（グリッドのカードに出す）
     final rankOf = useMemoized(
@@ -292,11 +310,11 @@ class LocalLibraryView extends HookConsumerWidget {
           ? const <AuthorGroup>[]
           : groupByAuthor(
               allWorks,
-              query: query.value,
+              query: debouncedQuery,
               profiles: profiles,
               reader: reader,
             ),
-      [allWorks, query.value, profiles, reader],
+      [allWorks, debouncedQuery, profiles, reader],
     );
     final isAuthorMode = viewMode.value == LocalViewMode.authors;
     final appSettings = ref.watch(settingsProvider).value;
@@ -1279,4 +1297,26 @@ String formatDateTime(DateTime t) {
   String two(int v) => v.toString().padLeft(2, '0');
   final date = '${t.year}/${two(t.month)}/${two(t.day)}';
   return '$date ${two(t.hour)}:${two(t.minute)}';
+}
+
+/// [value] が変わってから [delay] のあいだ変化が無ければ、新しい値を返す
+/// （それまでは前の値）。フォークで追加。
+///
+/// [immediateWhen] が true のときは待たずにすぐ新しい値を返す
+/// （検索語を消したときなど、待たせたくない場合）。
+T useDebounced<T>(T value, Duration delay, {bool immediateWhen = false}) {
+  final settled = useRef<T>(value);
+  // 待ち終わったら画面を作り直すための合図
+  final tick = useState(0);
+  // すぐ返す場合は、ref に入れるだけ（作り直しは起こさない）
+  if (immediateWhen) settled.value = value;
+  useEffect(() {
+    if (immediateWhen || identical(settled.value, value)) return null;
+    final timer = Timer(delay, () {
+      settled.value = value;
+      tick.value++;
+    });
+    return timer.cancel;
+  }, [value, immediateWhen]);
+  return settled.value;
 }

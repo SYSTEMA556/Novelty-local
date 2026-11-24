@@ -168,6 +168,25 @@ void main() {
       expect(controller.currentSegment?.text, '天音は笑った。');
     });
 
+    test('前もって読み取った演出を使い、文の数が合わなければ読み直す', () {
+      final document = _doc('一文目。二文目。');
+      final given = SpeechDirector.direct(document);
+      final withGiven = ReadAloudController(
+        document: document,
+        engine: _FakeEngine(),
+        directions: given,
+      );
+      final mismatched = ReadAloudController(
+        document: document,
+        engine: _FakeEngine(),
+        directions: given.sublist(0, 1),
+      );
+      addTearDown(withGiven.dispose);
+      addTearDown(mismatched.dispose);
+      expect(identical(withGiven.directions, given), isTrue);
+      expect(mismatched.directions, hasLength(2));
+    });
+
     test('別の読み上げを始めると、前の読み上げは止まる', () async {
       final first = ReadAloudController(
         document: _doc('一文目。'),

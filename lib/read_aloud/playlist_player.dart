@@ -184,11 +184,12 @@ class PlaylistPlayer extends Notifier<PlaylistNowPlaying?> {
     final saved = await ref.read(readingPositionsProvider.future);
     final options = await ref.read(localTextOptionsProvider.future);
     final text = await store.readText(work.id);
-    final elements = await parseInBackground(text, options: options);
-    final document = SpeechDocument.fromElements(elements);
+    final prepared = await prepareInBackground(text, options: options);
+    final document = prepared.document;
     if (document.segments.isEmpty) return null;
     final controller = createLocalReadAloud(
       document: document,
+      directions: prepared.directions,
       title: work.title,
       author: work.author,
       workId: work.id,
