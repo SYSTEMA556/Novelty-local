@@ -219,4 +219,3 @@ Future<PreparedText> prepareInBackground(
     );
   });
 }
-

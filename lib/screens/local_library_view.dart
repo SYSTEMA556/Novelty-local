@@ -277,12 +277,12 @@ class LocalLibraryView extends HookConsumerWidget {
     // - 検索語は打ち終わるまで少し待つ
     final usesPositions =
         sort.value == LocalSort.recent || sort.value == LocalSort.picks;
-    final sortPositions = useDebounced(
+    final sortPositions = useSettledValue(
       usesPositions ? positions : const <String, ReadingPosition>{},
       const Duration(seconds: 3),
       immediateWhen: !usesPositions,
     );
-    final debouncedQuery = useDebounced(
+    final debouncedQuery = useSettledValue(
       query.value,
       const Duration(milliseconds: 250),
       immediateWhen: query.value.isEmpty,
@@ -1304,7 +1304,7 @@ String formatDateTime(DateTime t) {
 ///
 /// [immediateWhen] が true のときは待たずにすぐ新しい値を返す
 /// （検索語を消したときなど、待たせたくない場合）。
-T useDebounced<T>(T value, Duration delay, {bool immediateWhen = false}) {
+T useSettledValue<T>(T value, Duration delay, {bool immediateWhen = false}) {
   final settled = useRef<T>(value);
   // 待ち終わったら画面を作り直すための合図
   final tick = useState(0);

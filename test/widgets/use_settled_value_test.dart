@@ -11,7 +11,7 @@ class _Probe extends HookWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shown = useDebounced(
+    final shown = useSettledValue(
       value,
       const Duration(milliseconds: 300),
       immediateWhen: immediate,
