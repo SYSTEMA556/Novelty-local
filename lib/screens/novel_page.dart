@@ -19,6 +19,7 @@ import 'package:novelty/utils/web_reading_positions.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
 import 'package:novelty/widgets/persistent_page_storage.dart';
+import 'package:novelty/widgets/pinned_bookmarks_sheet.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/widgets/reader_position_bar.dart';
@@ -32,6 +33,8 @@ class NovelPage extends HookConsumerWidget {
     super.key,
     this.episode,
     this.revised,
+    this.initialFraction,
+    this.initialReadAloudOffset,
   });
 
   /// 提供サイト（プロバイダ）。
@@ -45,6 +48,12 @@ class NovelPage extends HookConsumerWidget {
 
   /// 改稿日時（指定された場合、キャッシュ判定に使用）
   final String? revised;
+
+  /// 開いたら、その話の中のこの位置（0.0〜1.0）へ移る（しおりから開くとき）。
+  final double? initialFraction;
+
+  /// 開いたら、その話のこの文字位置の文から読み上げる（しおりから読むとき）。
+  final int? initialReadAloudOffset;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,6 +108,22 @@ class NovelPage extends HookConsumerWidget {
     }, [readAloud.value, settingsValue]);
     // 読み終えたときの処理（毎回最新の状態を見るよう ref で持つ）
     final advanceRef = useRef<VoidCallback?>(null);
+
+    // しおりから開いたときは、本文ができるのを待ってその位置へ移る
+    useEffect(() {
+      final fraction = initialFraction;
+      if (fraction == null) return null;
+      unawaited(() async {
+        final s = await ref.read(settingsProvider.future);
+        await navigationFor(initialEpisode).seekWhenReady(
+          fraction,
+          isVertical: s.isVertical,
+          isPageFlip: s.isPageFlip,
+        );
+      }());
+      return null;
+    }, const []);
+    final startedFromPin = useRef(false);
 
     // 話の途中の位置は少し待ってまとめて保存するので、閉じるときに確定させる
     final webPositions = ref.read(webReadingPositionsProvider.notifier);
@@ -306,6 +331,83 @@ class NovelPage extends HookConsumerWidget {
 
         final speaking = isReading ? readAloud.value?.currentSegment : null;
 
+        // しおりから「ここから読み上げ」で開いたとき
+        final pinOffset = initialReadAloudOffset;
+        if (pinOffset != null && !startedFromPin.value) {
+          startedFromPin.value = true;
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => unawaited(
+              startReading(initialEpisode, (d) => d.segmentIndexAt(pinOffset)),
+            ),
+          );
+        }
+
+        // 長押しで、今見ている所にしおりを挟む（フォークで追加）。
+        // 読み上げ中の話なら、読んでいる文に挟む
+        Future<void> addPinAt(int ep, AppSettings appSettings) async {
+          final elements = await loadEpisode(ep);
+          if (elements == null || !context.mounted) return;
+          final document = SpeechDocument.fromElements(elements);
+          final controller = readAloud.value;
+          final index =
+              controller != null &&
+                  controller.isActive &&
+                  readingEpisode.value == ep
+              ? controller.index
+              : document.segmentIndexAtProgress(
+                  navigationFor(ep).currentFraction(
+                    isVertical: appSettings.isVertical,
+                    isPageFlip: appSettings.isPageFlip,
+                  ),
+                );
+          await addWebPin(
+            context,
+            ref,
+            source: source,
+            workId: workId,
+            title: novelInfo.title ?? '',
+            episode: ep,
+            document: document,
+            segmentIndex: index,
+          );
+        }
+
+        // しおりの一覧から選んだ場所へ移る（別の話なら、その話を開き直す）
+        Future<void> onPinsPressed(AppSettings appSettings) async {
+          final chosen = await showWebPinsSheet(
+            context,
+            source: source,
+            workId: workId,
+          );
+          if (chosen == null || !context.mounted) return;
+          final (pin, action) = chosen;
+          final readFromPin = action == PinAction.readAloud;
+          if (pin.episode == currentEpisode.value) {
+            navigationFor(pin.episode).seek(
+              pin.fraction,
+              isVertical: appSettings.isVertical,
+            );
+            if (readFromPin) {
+              await startReading(
+                pin.episode,
+                (d) => d.segmentIndexAt(pin.offset),
+              );
+            }
+            return;
+          }
+          await Navigator.of(context).pushReplacement(
+            MaterialPageRoute<void>(
+              builder: (_) => NovelPage(
+                source: source,
+                workId: workId,
+                episode: pin.episode,
+                initialFraction: pin.fraction,
+                initialReadAloudOffset: readFromPin ? pin.offset : null,
+              ),
+            ),
+          );
+        }
+
         return settings.when(
           data: (settings) {
             return Scaffold(
@@ -326,6 +428,13 @@ class NovelPage extends HookConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       actions: [
+                        // 長押しで挟んだしおりの一覧（フォークで追加）
+                        IconButton(
+                          icon: const Icon(Icons.bookmarks_outlined),
+                          tooltip: 'しおり',
+                          onPressed: () =>
+                              unawaited(onPinsPressed(settings)),
+                        ),
                         IconButton(
                           icon: const Icon(Icons.record_voice_over_outlined),
                           tooltip: '読み上げ',
@@ -400,6 +509,9 @@ class NovelPage extends HookConsumerWidget {
                               isVertical: settings.isVertical,
                               isPageFlip: settings.isPageFlip,
                             ),
+                            child: GestureDetector(
+                            onLongPress: () =>
+                                unawaited(addPinAt(episodeNum, settings)),
                             child: NovelContent(
                             source: source,
                             workId: workId,
@@ -436,6 +548,7 @@ class NovelPage extends HookConsumerWidget {
                                       curve: Curves.easeOut,
                                     ),
                             ),
+                          ),
                           ),
                           ),
                         );

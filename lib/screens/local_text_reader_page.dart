@@ -155,8 +155,12 @@ class LocalTextReaderPage extends HookConsumerWidget {
     required this.elements,
     this.workId,
     this.sharedReadAloud,
+    this.initialFraction,
     super.key,
   });
+
+  /// 開いたら移る位置（全体の 0.0〜1.0。しおりから開いたとき）。
+  final double? initialFraction;
 
   /// 画面タイトル（ファイル名）。
   final String title;
@@ -271,6 +275,20 @@ class LocalTextReaderPage extends HookConsumerWidget {
         child: body,
       );
     }
+
+    // しおりから開いたときは、本文ができるのを待ってその位置へ移る
+    useEffect(() {
+      final fraction = initialFraction;
+      if (fraction == null) return null;
+      unawaited(
+        navigation.seekWhenReady(
+          fraction,
+          isVertical: isVertical,
+          isPageFlip: settingsValue?.isPageFlip ?? false,
+        ),
+      );
+      return null;
+    }, const []);
 
     // しおりの場所へ移る
     void goToPin(PinnedBookmark pin) {

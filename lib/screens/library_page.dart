@@ -8,6 +8,7 @@ import 'package:novelty/models/novel_info_extension.dart';
 import 'package:novelty/models/novel_search_query.dart';
 import 'package:novelty/repositories/novel_repository.dart';
 import 'package:novelty/screens/local_library_view.dart';
+import 'package:novelty/screens/pins_tab.dart';
 import 'package:novelty/screens/search_page.dart';
 import 'package:novelty/sites/novel_site_registry.dart';
 import 'package:novelty/sites/novel_source.dart';
@@ -84,7 +85,7 @@ class LibraryPage extends ConsumerWidget {
     }
 
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
       appBar: AppBar(
         // Web小説とローカル作品をタブで切り替える
@@ -92,6 +93,8 @@ class LibraryPage extends ConsumerWidget {
           tabs: [
             Tab(text: 'Web小説'),
             Tab(text: 'ローカル'),
+            // 長押しで挟んだしおり（フォークで追加）
+            Tab(text: 'しおり'),
           ],
         ),
         title: Row(
@@ -223,6 +226,7 @@ class LibraryPage extends ConsumerWidget {
         ],
       ),
           const LocalLibraryView(),
+          const AllPinsView(),
         ],
       ),
       ),

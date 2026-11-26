@@ -27,14 +27,23 @@ import 'package:novelty/widgets/read_aloud_bar.dart';
 /// ローカルライブラリの作品を開く。
 ///
 /// [autoPlay] なら、開いたらすぐ前回の続き（無ければ最初）から読み上げる。
+///
+/// [pin] を渡すと、しおりの場所を開く（[readFromPin] ならそこから読み上げる）。
 Future<void> openLocalWork(
   BuildContext context,
   LocalWork work, {
   bool autoPlay = false,
+  PinnedBookmark? pin,
+  bool readFromPin = false,
 }) {
   return Navigator.of(context, rootNavigator: true).push(
     MaterialPageRoute<void>(
-      builder: (_) => LocalWorkReaderPage(work: work, autoPlay: autoPlay),
+      builder: (_) => LocalWorkReaderPage(
+        work: work,
+        autoPlay: autoPlay,
+        pin: pin,
+        readFromPin: readFromPin,
+      ),
     ),
   );
 }
@@ -61,8 +70,16 @@ class LocalWorkReaderPage extends HookConsumerWidget {
   const LocalWorkReaderPage({
     required this.work,
     this.autoPlay = false,
+    this.pin,
+    this.readFromPin = false,
     super.key,
   });
+
+  /// 開いたら移るしおり。
+  final PinnedBookmark? pin;
+
+  /// しおりの場所から読み上げるか。
+  final bool readFromPin;
 
   /// 表示する作品。
   final LocalWork work;
@@ -114,6 +131,12 @@ class LocalWorkReaderPage extends HookConsumerWidget {
         latest.value = controller;
         loaded.value = _LoadedWork(target, elements, controller);
         previous?.dispose();
+        // しおりから「ここから読み上げ」で開いたとき
+        final fromPin = pin;
+        if (readFromPin && fromPin != null && target.id == work.id) {
+          await controller.playFrom(document.segmentIndexAt(fromPin.offset));
+          return;
+        }
         if (!play || document.segments.isEmpty) return;
         // 前回の続きから。最後まで読んだ作品なら最初から
         final ttsOffset = saved[target.id]?.ttsOffset;
@@ -159,6 +182,8 @@ class LocalWorkReaderPage extends HookConsumerWidget {
       elements: current.elements,
       workId: current.work.id,
       sharedReadAloud: current.readAloud,
+      // しおりから開いたときは、その場所へ移る（最初の作品だけ）
+      initialFraction: current.work.id == work.id ? pin?.fraction : null,
     );
   }
 }

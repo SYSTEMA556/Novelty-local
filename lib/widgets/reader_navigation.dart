@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:tategaki/tategaki.dart';
 
@@ -132,6 +133,37 @@ class ReaderNavigation {
     } else if (horizontalController.hasClients) {
       final max = horizontalController.position.maxScrollExtent;
       horizontalController.jumpTo(f * max);
+    }
+  }
+
+  /// 本文の組み立てが済むのを待ってから、全体の [fraction] の位置へ移る
+  /// （しおりから開いたとき。フォークで追加）。
+  ///
+  /// 開いた直後は、縦書きの組版やスクロールの準備ができていないため、
+  /// 準備ができるまで1フレームずつ待つ（最大でおよそ5秒）。
+  Future<void> seekWhenReady(
+    double fraction, {
+    required bool isVertical,
+    required bool isPageFlip,
+  }) async {
+    for (var frame = 0; frame < 300; frame++) {
+      await SchedulerBinding.instance.endOfFrame;
+      if (isVertical && isPageFlip) {
+        final count = pageCount.value;
+        if (count > 1 && pageController.hasClients) {
+          jumpToPage((fraction.clamp(0.0, 1.0) * (count - 1)).round());
+          return;
+        }
+      } else if (isVertical) {
+        if (tategakiElementCount > 0) {
+          seek(fraction, isVertical: true);
+          return;
+        }
+      } else if (horizontalController.hasClients &&
+          horizontalController.position.maxScrollExtent > 0) {
+        seek(fraction, isVertical: false);
+        return;
+      }
     }
   }
 

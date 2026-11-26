@@ -13,6 +13,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:novelty/local_library/local_library_models.dart';
 import 'package:novelty/local_library/local_library_providers.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
+import 'package:novelty/sites/novel_source.dart';
+import 'package:novelty/utils/web_pins.dart';
 
 /// しおりの目印にする冒頭の文字数。
 const pinnedSnippetLength = 30;
@@ -181,3 +183,153 @@ class _PinLabel extends StatelessWidget {
 }
 
 String _percent(double fraction) => '${(fraction * 100).toStringAsFixed(1)}%';
+
+// ---- Web 小説（なろう・カクヨム）のしおり ----
+
+/// Web 小説の第 [episode] 話の今の場所にしおりを挟む。
+/// 作品のしおりが3つ埋まっていたら、どれと入れ替えるかを選ぶ。
+Future<void> addWebPin(
+  BuildContext context,
+  WidgetRef ref, {
+  required NovelSource source,
+  required String workId,
+  required String title,
+  required int episode,
+  required SpeechDocument document,
+  required int segmentIndex,
+}) async {
+  if (document.segments.isEmpty) return;
+  unawaited(HapticFeedback.mediumImpact());
+  final base = pinnedBookmarkAt(document, segmentIndex);
+  final pin = WebPin(
+    source: source,
+    workId: workId,
+    title: title,
+    episode: episode,
+    offset: base.offset,
+    fraction: base.fraction,
+    snippet: base.snippet,
+    createdAt: base.createdAt,
+  );
+  final notifier = ref.read(webPinsProvider.notifier);
+  await ref.read(webPinsProvider.future);
+  final mine = notifier.pinsOf(source, workId);
+  WebPin? replace;
+  if (mine.length >= WebPin.maxPerWork) {
+    if (!context.mounted) return;
+    replace = await showDialog<WebPin>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('しおりは3つまでです。どれと入れ替えますか？'),
+        children: [
+          for (final p in mine)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(context, p),
+              child: _WebPinLabel(pin: p),
+            ),
+        ],
+      ),
+    );
+    if (replace == null) return;
+  }
+  await notifier.add(pin, replace: replace);
+  if (!context.mounted) return;
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        content: Text('しおりを挟みました（第$episode話・${_percent(pin.fraction)}）'),
+        action: SnackBarAction(
+          label: '外す',
+          onPressed: () => unawaited(notifier.remove(pin)),
+        ),
+      ),
+    );
+}
+
+/// Web 小説の作品のしおりの一覧を出し、選んだしおりとすることを返す。
+Future<(WebPin, PinAction)?> showWebPinsSheet(
+  BuildContext context, {
+  required NovelSource source,
+  required String workId,
+}) {
+  return showModalBottomSheet<(WebPin, PinAction)>(
+    context: context,
+    useSafeArea: true,
+    builder: (_) => _WebPinsSheet(source: source, workId: workId),
+  );
+}
+
+class _WebPinsSheet extends ConsumerWidget {
+  const _WebPinsSheet({required this.source, required this.workId});
+
+  final NovelSource source;
+  final String workId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(webPinsProvider);
+    final notifier = ref.read(webPinsProvider.notifier);
+    final pins = notifier.pinsOf(source, workId);
+    return ListView(
+      shrinkWrap: true,
+      children: [
+        const ListTile(
+          title: Text('しおり'),
+          subtitle: Text('本文を長押しすると、今見ている所に挟めます（3つまで）'),
+        ),
+        if (pins.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text('まだしおりはありません'),
+          ),
+        for (final pin in pins)
+          ListTile(
+            leading: const Icon(Icons.bookmark),
+            title: _WebPinLabel(pin: pin),
+            onTap: () => Navigator.pop(context, (pin, PinAction.open)),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.record_voice_over_outlined),
+                  tooltip: 'ここから読み上げ',
+                  onPressed: () =>
+                      Navigator.pop(context, (pin, PinAction.readAloud)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '外す',
+                  onPressed: () => unawaited(notifier.remove(pin)),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+class _WebPinLabel extends StatelessWidget {
+  const _WebPinLabel({required this.pin});
+
+  final WebPin pin;
+
+  @override
+  Widget build(BuildContext context) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(pin.snippet, maxLines: 2, overflow: TextOverflow.ellipsis),
+        Text('第${pin.episode}話・${_percent(pin.fraction)}', style: small),
+      ],
+    );
+  }
+}
+
+/// しおりの割合の表し方（例：42.3%）。
+String pinPercent(double fraction) => _percent(fraction);
+
