@@ -6,9 +6,9 @@ import 'package:novelty/widgets/pinned_bookmarks_sheet.dart';
 
 void main() {
   final document = SpeechDocument.fromElements([
-    const PlainText('一つ目の文。'),
-    const NewLine(),
-    const PlainText('二つ目の文はとても長くて、しおりの目印としては三十文字を超えてしまう文です。'),
+    PlainText('一つ目の文。'),
+    NewLine(),
+    PlainText('二つ目の文はとても長くて、しおりの目印としては三十文字を超えてしまう文です。'),
   ]);
 
   test('しおりは文の頭の位置と、冒頭30文字ほどの目印を持つ', () {
@@ -34,7 +34,7 @@ void main() {
     expect(restored.pins, hasLength(1));
     expect(restored.pins.single.snippet, position.pins.single.snippet);
 
-    final old = ReadingPosition.fromJson({
+    final old = ReadingPosition.fromJson(const {
       'offsets': <String, dynamic>{},
       'progress': 0.1,
       'updatedAt': 0,

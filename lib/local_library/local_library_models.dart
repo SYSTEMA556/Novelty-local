@@ -162,9 +162,6 @@ class ReadingPosition {
     this.pins = const [],
   });
 
-  /// 1作品に挟めるしおりの数。
-  static const maxPins = 3;
-
   /// JSONから生成する。
   factory ReadingPosition.fromJson(Map<String, dynamic> json) {
     final rawOffsets = json['offsets'] as Map<String, dynamic>? ?? const {};
@@ -182,6 +179,9 @@ class ReadingPosition {
       ],
     );
   }
+
+  /// 1作品に挟めるしおりの数。
+  static const maxPins = 3;
 
   /// 表示モード → スクロール位置（ページめくりはページ番号）。
   final Map<String, double> offsets;
