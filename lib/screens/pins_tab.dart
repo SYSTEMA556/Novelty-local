@@ -193,10 +193,7 @@ class _BookPinsCard extends StatelessWidget {
     final dark = HSLColor.fromColor(base).withLightness(0.16).toColor();
     const onCard = Colors.white;
     final dim = onCard.withValues(alpha: 0.75);
-    final timeline = [
-      for (final p in pins)
-        if (p.timeline case final t?) t,
-    ];
+    final timeline = [for (final p in pins) ?p.timeline];
 
     return Card(
       margin: EdgeInsets.zero,
