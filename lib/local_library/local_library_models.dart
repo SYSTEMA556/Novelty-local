@@ -159,7 +159,11 @@ class ReadingPosition {
     required this.progress,
     required this.updatedAt,
     this.ttsOffset,
+    this.pins = const [],
   });
+
+  /// 1作品に挟めるしおりの数。
+  static const maxPins = 3;
 
   /// JSONから生成する。
   factory ReadingPosition.fromJson(Map<String, dynamic> json) {
@@ -172,6 +176,10 @@ class ReadingPosition {
       progress: (json['progress'] as num?)?.toDouble() ?? 0,
       updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
       ttsOffset: json['ttsOffset'] as int?,
+      pins: [
+        for (final p in json['pins'] as List? ?? const [])
+          PinnedBookmark.fromJson(p as Map<String, dynamic>),
+      ],
     );
   }
 
@@ -187,12 +195,68 @@ class ReadingPosition {
   /// 最後に読み上げた文の位置（本文位置。読み上げたことが無ければ null）。
   final int? ttsOffset;
 
+  /// 長押しで挟んだしおり（最大 [maxPins] 個。フォークで追加）。
+  final List<PinnedBookmark> pins;
+
+  /// しおりだけを差し替えた読書位置を作る。
+  ReadingPosition withPins(List<PinnedBookmark> pins) => ReadingPosition(
+    offsets: offsets,
+    progress: progress,
+    updatedAt: updatedAt,
+    ttsOffset: ttsOffset,
+    pins: List.unmodifiable(pins),
+  );
+
   /// JSONに変換する。
   Map<String, dynamic> toJson() => {
     'offsets': offsets,
     'progress': progress,
     'updatedAt': updatedAt.millisecondsSinceEpoch,
     if (ttsOffset != null) 'ttsOffset': ttsOffset,
+    if (pins.isNotEmpty) 'pins': [for (final p in pins) p.toJson()],
+  };
+}
+
+/// 長押しで挟むしおり（フォークで追加）。
+///
+/// 場所は本文の文字位置で持つ。表示の方式（縦書き・横書き・ページめくり）に
+/// よらず同じ場所へ戻れるように。一覧では冒頭の文字と、全体の何%かを出す。
+@immutable
+class PinnedBookmark {
+  /// コンストラクタ。
+  const PinnedBookmark({
+    required this.offset,
+    required this.fraction,
+    required this.snippet,
+    required this.createdAt,
+  });
+
+  /// JSONから生成する。
+  factory PinnedBookmark.fromJson(Map<String, dynamic> json) => PinnedBookmark(
+    offset: json['offset'] as int,
+    fraction: (json['fraction'] as num).toDouble(),
+    snippet: json['snippet'] as String? ?? '',
+    createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int),
+  );
+
+  /// 本文の文字位置（文の頭）。
+  final int offset;
+
+  /// 全体のどこか（0.0〜1.0）。
+  final double fraction;
+
+  /// その場所の冒頭の文字（一覧で選ぶときの目印）。
+  final String snippet;
+
+  /// 挟んだ日時。
+  final DateTime createdAt;
+
+  /// JSONに変換する。
+  Map<String, dynamic> toJson() => {
+    'offset': offset,
+    'fraction': fraction,
+    'snippet': snippet,
+    'createdAt': createdAt.millisecondsSinceEpoch,
   };
 }
 

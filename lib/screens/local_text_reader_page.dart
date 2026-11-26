@@ -24,6 +24,7 @@ import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/gesture_shield.dart';
 import 'package:novelty/widgets/novel_content.dart';
 import 'package:novelty/widgets/persistent_page_storage.dart';
+import 'package:novelty/widgets/pinned_bookmarks_sheet.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
 import 'package:novelty/widgets/reader_navigation.dart';
 import 'package:novelty/widgets/reader_position_bar.dart';
@@ -245,6 +246,43 @@ class LocalTextReaderPage extends HookConsumerWidget {
     final id = workId;
     if (id != null) {
       body = _BookmarkScope(workId: id, mode: mode, child: body);
+      // 長押しで、今見ている所にしおりを挟む（フォークで追加）。
+      // 読み上げ中なら、読んでいる文に挟む
+      body = GestureDetector(
+        onLongPress: () {
+          final index = readAloud.isActive
+              ? readAloud.index
+              : document.segmentIndexAtProgress(
+                  navigation.currentFraction(
+                    isVertical: isVertical,
+                    isPageFlip: settingsValue?.isPageFlip ?? false,
+                  ),
+                );
+          unawaited(
+            addPinnedBookmark(
+              context,
+              ref,
+              workId: id,
+              document: document,
+              segmentIndex: index,
+            ),
+          );
+        },
+        child: body,
+      );
+    }
+
+    // しおりの場所へ移る
+    void goToPin(PinnedBookmark pin) {
+      final pageFlip = isVertical && (settingsValue?.isPageFlip ?? false);
+      if (pageFlip) {
+        final count = navigation.pageCount.value;
+        if (count > 1) {
+          navigation.jumpToPage((pin.fraction * (count - 1)).round());
+        }
+      } else {
+        navigation.seek(pin.fraction, isVertical: isVertical);
+      }
     }
 
     return Scaffold(
@@ -254,6 +292,26 @@ class LocalTextReaderPage extends HookConsumerWidget {
           ? AppBar(
               title: Text(title, overflow: TextOverflow.ellipsis),
               actions: [
+                // 長押しで挟んだしおりの一覧（フォークで追加）
+                if (id != null)
+                  IconButton(
+                    icon: const Icon(Icons.bookmarks_outlined),
+                    tooltip: 'しおり',
+                    onPressed: () => unawaited(() async {
+                      final chosen = await showPinnedBookmarksSheet(
+                        context,
+                        workId: id,
+                      );
+                      if (chosen == null) return;
+                      final (pin, action) = chosen;
+                      goToPin(pin);
+                      if (action == PinAction.readAloud) {
+                        await readAloud.playFrom(
+                          document.segmentIndexAt(pin.offset),
+                        );
+                      }
+                    }()),
+                  ),
                 IconButton(
                   icon: const Icon(Icons.record_voice_over_outlined),
                   tooltip: '読み上げ',
@@ -356,9 +414,11 @@ class LocalTextReaderPage extends HookConsumerWidget {
     }
 
     final id = workId;
-    final ttsOffset = id == null
+    final saved = id == null
         ? null
-        : ref.read(readingPositionsProvider).value?[id]?.ttsOffset;
+        : ref.read(readingPositionsProvider).value?[id];
+    final ttsOffset = saved?.ttsOffset;
+    final pins = saved?.pins ?? const <PinnedBookmark>[];
     final fraction = navigation.currentFraction(
       isVertical: settings?.isVertical ?? false,
       isPageFlip: settings?.isPageFlip ?? false,
@@ -376,6 +436,14 @@ class LocalTextReaderPage extends HookConsumerWidget {
           icon: Icons.history,
           title: '前回読み上げた文から',
           segmentIndex: document.segmentIndexAt(ttsOffset),
+        ),
+      // 長押しで挟んだしおり（フォークで追加）
+      for (final pin in pins)
+        ReadAloudStartOption(
+          icon: Icons.bookmark,
+          title: pin.snippet,
+          subtitle: 'しおり・${(pin.fraction * 100).toStringAsFixed(1)}%',
+          segmentIndex: document.segmentIndexAt(pin.offset),
         ),
       const ReadAloudStartOption(
         icon: Icons.first_page,

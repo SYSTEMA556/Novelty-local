@@ -237,9 +237,61 @@ class ReadingPositionsNotifier
         progress: _clamp01(progress ?? previous?.progress ?? 0),
         updatedAt: DateTime.now(),
         ttsOffset: ttsOffset ?? previous?.ttsOffset,
+        // 長押しで挟んだしおりは引き継ぐ
+        pins: previous?.pins ?? const [],
       ),
     });
 
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(seconds: 1), () => unawaited(_flush()));
+  }
+
+  /// しおりを挟む（フォークで追加）。
+  ///
+  /// すでに [ReadingPosition.maxPins] 個あるときは、[replaceIndex] 番目と
+  /// 入れ替える（指定が無ければいちばん古いもの）。しおりは場所の順に並べる。
+  void addPin(String workId, PinnedBookmark pin, {int? replaceIndex}) {
+    final current = state.value;
+    if (current == null) return;
+    final previous =
+        current[workId] ??
+        ReadingPosition(
+          offsets: const {},
+          progress: pin.fraction,
+          updatedAt: DateTime.now(),
+        );
+    final pins = [...previous.pins];
+    if (pins.length >= ReadingPosition.maxPins) {
+      var index = replaceIndex;
+      if (index == null) {
+        index = 0;
+        for (var i = 1; i < pins.length; i++) {
+          if (pins[i].createdAt.isBefore(pins[index!].createdAt)) index = i;
+        }
+      }
+      pins.removeAt(index!);
+    }
+    pins
+      ..add(pin)
+      ..sort((a, b) => a.offset.compareTo(b.offset));
+    _setPins(workId, previous, pins);
+  }
+
+  /// しおりを外す（フォークで追加）。
+  void removePin(String workId, PinnedBookmark pin) {
+    final previous = state.value?[workId];
+    if (previous == null) return;
+    _setPins(workId, previous, [...previous.pins]..remove(pin));
+  }
+
+  void _setPins(
+    String workId,
+    ReadingPosition previous,
+    List<PinnedBookmark> pins,
+  ) {
+    final current = state.value;
+    if (current == null) return;
+    state = AsyncData({...current, workId: previous.withPins(pins)});
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(seconds: 1), () => unawaited(_flush()));
   }
