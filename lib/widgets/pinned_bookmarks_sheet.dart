@@ -332,4 +332,3 @@ class _WebPinLabel extends StatelessWidget {
 
 /// しおりの割合の表し方（例：42.3%）。
 String pinPercent(double fraction) => _percent(fraction);
-
