@@ -46,8 +46,8 @@ import java.util.zip.ZipInputStream
  *   / prefetch(..., ahead) / configure(performance) / cancelPending / lastTiming
  *   / play(path) / stop
  *   / models / extraDir / kanalize(words) / installModel(path, name, sha256) / removeModel(name)
- * - 声のモデルは2種類：APK に同梱したもの（assets/voicevox/*.vvm）と、
- *   あとから公式の配布元から落としたもの（filesDir/voicevox/extra/*.vvm）。
+ * - 声のモデルは2種類：APK に同梱したもの（assets/voicevox の .vvm）と、
+ *   あとから公式の配布元から落としたもの（filesDir/voicevox/extra の .vvm）。
  *   ダウンロード自体は Dart 側が行い、ここでは中身の確かめ（SHA-256）と登録だけをする。
  * - 合成スレッドは1本。[PrioritizedTask] の優先度キューで、今読む文（NOW）を
  *   先読み（NOW + ahead）より先に処理する。実行中のタスクは取り消さない

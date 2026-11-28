@@ -1029,12 +1029,14 @@ class _VoicevoxModelListState extends State<_VoicevoxModelList> {
             subtitle: const Text('公式の配布元からダウンロードします（Wi-Fi 推奨）'),
             children: [
               for (final pack in voicevoxModelPacks) _tile(pack),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Text(
-                  '声は github.com/VOICEVOX/voicevox_vvm の公式ファイルを'
-                  'そのまま使い、届いた中身を照合してから入れます。'
-                  '利用規約とクレジットは「ライセンス」に載せています。',
+                  [
+                    '声は github.com/VOICEVOX/voicevox_vvm の公式ファイルを',
+                    'そのまま使い、届いた中身を照合してから入れます。',
+                    '利用規約とクレジットは「ライセンス」に載せています。',
+                  ].join(),
                 ),
               ),
             ],
