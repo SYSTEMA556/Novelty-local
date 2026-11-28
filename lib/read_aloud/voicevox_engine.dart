@@ -126,14 +126,6 @@ const voicevoxCharacters = [
     namidame: 76,
   ),
   VoicevoxCharacter(
-    id: 'sora',
-    name: '九州そら',
-    normal: 16,
-    amaama: 15,
-    tsuntsun: 18,
-    sasayaki: 19,
-  ),
-  VoicevoxCharacter(
     id: 'tsumugi',
     name: '春日部つむぎ',
     normal: 8,
