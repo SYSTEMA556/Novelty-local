@@ -6,7 +6,7 @@
 > 足した機能・使い方は [docs/novelty-local/README.md](docs/novelty-local/README.md)、開発者向けの設計は [ARCHITECTURE.md](docs/novelty-local/ARCHITECTURE.md) にあります。
 > APK は [リリース apk-latest](https://github.com/SYSTEMA556/Novelty-local/releases/tag/apk-latest) にあります。
 > このフォークは、下の「最小限の権限」に加えて、フォルダの取り込み（すべてのファイルへのアクセス）と、画面を消しても読み上げを続けるための権限を使います。
-> 読み上げの声に **VOICEVOX:四国めたん・ずんだもん・九州そら・東北きりたん** を使用しています。同梱物のライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を見てください。
+> 読み上げの声に **VOICEVOX:四国めたん・ずんだもん・春日部つむぎ・ナースロボ＿タイプＴ**（ほか追加した声） を使用しています。同梱物のライセンスは [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を見てください。
 
 # Novelty
 

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
+import 'package:novelty/read_aloud/voicevox_models.dart';
 
 void main() {
   final metan = voicevoxCharacters.first;
@@ -48,11 +49,65 @@ void main() {
     expect(kiritan.credit, 'VOICEVOX:東北きりたん');
   });
 
-  test('4人の声を同梱している', () {
+  test('使える声の一覧', () {
     expect(
       voicevoxCharacters.map((c) => c.name),
-      ['四国めたん', 'ずんだもん', '九州そら', '東北きりたん'],
+      [
+        '四国めたん',
+        'ずんだもん',
+        '春日部つむぎ',
+        'ナースロボ＿タイプＴ',
+        '中部つるぎ',
+        '暁記ミタマ',
+        '里石ユカ',
+        '九州そら',
+        '東北きりたん',
+      ],
     );
+  });
+
+  test('どの声にも、入っているモデルが分かっている', () {
+    for (final c in voicevoxCharacters) {
+      expect(c.model, isNotNull, reason: c.name);
+      for (final id in [
+        c.amaama,
+        c.tsuntsun,
+        c.sasayaki,
+        c.hisohiso,
+        c.namidame,
+      ].whereType<int>()) {
+        expect(voicevoxModelOfStyle[id], isNotNull, reason: '${c.name} $id');
+      }
+    }
+  });
+
+  test('同梱は めたん・つむぎ・ナースロボ（0.vvm と 11.vvm）', () {
+    expect(voicevoxCharacterOf('voicevox:metan')?.model, '0.vvm');
+    expect(voicevoxCharacterOf('voicevox:tsumugi')?.model, '0.vvm');
+    expect(voicevoxCharacterOf('voicevox:nurserobo')?.model, '11.vvm');
+    expect(voicevoxCharacterOf('voicevox:tsurugi')?.model, '18.vvm');
+    expect(voicevoxCharacterOf('voicevox:yuka')?.model, '24.vvm');
+    expect(
+      voicevoxCharacterOf('voicevox:yuka')?.credit,
+      'VOICEVOX:里石ユカ（つぼみ）',
+    );
+    // 追加できるモデルに同梱分は入れない
+    expect(
+      voicevoxModelPacks.map((p) => p.file),
+      isNot(anyOf(contains('0.vvm'), contains('11.vvm'))),
+    );
+  });
+
+  test('演技用のモデルが入っていなければノーマルで読む', () {
+    const whisper = SpeechDirection(
+      role: SpeechRole.dialogue,
+      emotion: SpeechEmotion.whisper,
+      intensity: 1,
+    );
+    expect(metan.styleFor(whisper, installed: {'0.vvm'}), 2);
+    expect(metan.styleFor(whisper, installed: {'0.vvm', '5.vvm'}), 36);
+    final nurse = voicevoxCharacterOf('voicevox:nurserobo')!;
+    expect(nurse.styleFor(whisper, installed: {'0.vvm', '11.vvm'}), 50);
   });
 
   test('声の設定の名前からキャラクターを引ける', () {

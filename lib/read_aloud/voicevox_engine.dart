@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
+import 'package:novelty/read_aloud/voicevox_models.dart';
 
 /// VOICEVOX の声を表す名前の頭（声の設定に「voicevox:metan」のように入れる）。
 const voicevoxVoicePrefix = 'voicevox:';
@@ -29,6 +30,8 @@ class VoicevoxCharacter {
     this.sasayaki,
     this.hisohiso,
     this.namidame,
+    this.creditName,
+    this.terms = _zunkoTerms,
   });
 
   /// 設定に保存する名前（voicevox: の後ろ）。
@@ -55,33 +58,52 @@ class VoicevoxCharacter {
   /// なみだめ（悲しみに使う）。
   final int? namidame;
 
+  /// クレジットに書く名前（表示名と違うときだけ。例: 里石ユカ（つぼみ））。
+  final String? creditName;
+
+  /// 音声ライブラリの利用規約の場所。
+  final String terms;
+
   /// 声の設定に入れる値。
   String get voice => '$voicevoxVoicePrefix$id';
 
   /// クレジット表記（各音声ライブラリの規約で必要）。
-  String get credit => 'VOICEVOX:$name';
+  String get credit => 'VOICEVOX:${creditName ?? name}';
+
+  /// ノーマルの声が入っているモデルのファイル（例: 0.vvm）。
+  String? get model => voicevoxModelOfStyle[normal];
 
   /// 演出から声の種類を選ぶ（演技を切っているときは [direction] が null）。
-  int styleFor(SpeechDirection? direction) {
+  ///
+  /// [installed] は入っているモデルのファイル名（null なら全部あるものとする）。
+  /// 演技用の声のモデルがまだ入っていなければ、ノーマルで読む。
+  int styleFor(SpeechDirection? direction, {Set<String>? installed}) {
+    bool usable(int? id) =>
+        id != null &&
+        (installed == null || installed.contains(voicevoxModelOfStyle[id]));
     if (direction == null) return normal;
-    if (direction.role == SpeechRole.thought && hisohiso != null) {
+    if (direction.role == SpeechRole.thought && usable(hisohiso)) {
       return hisohiso!;
     }
-    return switch (direction.emotion) {
-          SpeechEmotion.whisper => sasayaki,
-          SpeechEmotion.joy => amaama,
-          SpeechEmotion.anger || SpeechEmotion.shout => tsuntsun,
-          SpeechEmotion.sadness => namidame,
-          _ => null,
-        } ??
-        normal;
+    final style = switch (direction.emotion) {
+      SpeechEmotion.whisper => sasayaki,
+      SpeechEmotion.joy => amaama,
+      SpeechEmotion.anger || SpeechEmotion.shout => tsuntsun,
+      SpeechEmotion.sadness => namidame,
+      _ => null,
+    };
+    return usable(style) ? style! : normal;
   }
 }
 
-/// このアプリに同梱している VOICEVOX の声。
+const _zunkoTerms = 'https://zunko.jp/con_ongen_kiyaku.html';
+const _yogataTerms = 'https://yogataritobari.studio.site/#rules';
+
+/// このアプリで使える VOICEVOX の声。
 ///
-/// 番号は公式の音声モデル（0.vvm・2.vvm・5.vvm・15.vvm・21.vvm）の中身で
-/// 確かめたもの。
+/// 番号は公式の音声モデル（VOICEVOX/voicevox_vvm 0.17.1 の README の表）で
+/// 確かめたもの。どのモデルに入っているかは [voicevoxModelOfStyle]。
+/// 同梱は 0.vvm・11.vvm だけで、ほかは設定画面から追加する。
 const voicevoxCharacters = [
   VoicevoxCharacter(
     id: 'metan',
@@ -101,6 +123,56 @@ const voicevoxCharacters = [
     sasayaki: 22,
     hisohiso: 38,
     namidame: 76,
+  ),
+  VoicevoxCharacter(
+    id: 'sora',
+    name: '九州そら',
+    normal: 16,
+    amaama: 15,
+    tsuntsun: 18,
+    sasayaki: 19,
+  ),
+  VoicevoxCharacter(
+    id: 'tsumugi',
+    name: '春日部つむぎ',
+    normal: 8,
+    terms: 'https://tsumugi-official.studio.site/rule',
+  ),
+  // 楽々を喜び、内緒話をささやき・心の声に使う（恐怖は悲しみと違うので使わない）
+  VoicevoxCharacter(
+    id: 'nurserobo',
+    name: 'ナースロボ＿タイプＴ',
+    normal: 47,
+    amaama: 48,
+    sasayaki: 50,
+    hisohiso: 50,
+    terms: 'https://www.krnr.top/rules',
+  ),
+  VoicevoxCharacter(
+    id: 'tsurugi',
+    name: '中部つるぎ',
+    normal: 94,
+    tsuntsun: 95,
+    sasayaki: 96,
+    hisohiso: 96,
+    namidame: 98,
+  ),
+  VoicevoxCharacter(
+    id: 'mitama',
+    name: '暁記ミタマ',
+    normal: 122,
+    tsuntsun: 123,
+    sasayaki: 125,
+    hisohiso: 125,
+    namidame: 124,
+    terms: _yogataTerms,
+  ),
+  VoicevoxCharacter(
+    id: 'yuka',
+    name: '里石ユカ',
+    normal: 126,
+    creditName: '里石ユカ（つぼみ）',
+    terms: 'https://satoishiyuka.wixsite.com/satoishi/kiyaku',
   ),
   VoicevoxCharacter(
     id: 'sora',
@@ -145,12 +217,13 @@ class VoicevoxRequest {
     String text,
     SpeechProsody prosody,
     VoicevoxCharacter character,
-    SpeechDirection? direction,
-  ) {
+    SpeechDirection? direction, {
+    Set<String>? installed,
+  }) {
     double round(double v) => (v * 1000).roundToDouble() / 1000;
     return VoicevoxRequest(
       text: text,
-      styleId: character.styleFor(direction),
+      styleId: character.styleFor(direction, installed: installed),
       speed: round((prosody.rate * 2).clamp(0.5, 2.0)),
       pitch: round(((prosody.pitch - 1) * 0.3).clamp(-0.15, 0.15)),
       intonation: round(prosody.intonation.clamp(0.0, 2.0)),
@@ -411,8 +484,16 @@ class VoicevoxEngine implements SpeechEngine {
     }
   }
 
-  VoicevoxCharacter _characterOf(String? voice) =>
-      voicevoxCharacterOf(voice) ?? voicevoxCharacters.first;
+  // 選んだ声のモデルが入っていなければ（消した・まだ落としていない）、最初の声で読む
+  VoicevoxCharacter _characterOf(String? voice) {
+    final character = voicevoxCharacterOf(voice);
+    final installed = VoicevoxModels.installed.value;
+    if (character == null ||
+        (installed != null && !installed.contains(character.model))) {
+      return voicevoxCharacters.first;
+    }
+    return character;
+  }
 
   @override
   Future<void> apply(
@@ -423,7 +504,14 @@ class VoicevoxEngine implements SpeechEngine {
     _stopped = false;
     _dispatched = Completer<void>();
     // 文は speak で受け取るので、ここでは値だけ覚えておく
-    _next = VoicevoxRequest.of('', prosody, _characterOf(voice), direction);
+    await VoicevoxModels.refresh();
+    _next = VoicevoxRequest.of(
+      '',
+      prosody,
+      _characterOf(voice),
+      direction,
+      installed: VoicevoxModels.installed.value,
+    );
   }
 
   @override
@@ -447,6 +535,7 @@ class VoicevoxEngine implements SpeechEngine {
           prosody,
           _characterOf(voice),
           direction,
+          installed: VoicevoxModels.installed.value,
         ),
         ahead: ahead,
       );
@@ -625,8 +714,12 @@ void registerVoicevoxLicenses() {
           '商用・非商用問わず利用でき、アプリケーションに組み込んで再配布できます。',
           '作成された音声を利用する際は各音声ライブラリの規約に従ってください。',
           '利用の際は VOICEVOX を利用したことがわかるクレジット表記が必要です。',
-          '四国めたん・ずんだもん・九州そら・東北きりたんの音声ライブラリの規約：',
-          'https://zunko.jp/con_ongen_kiyaku.html',
+          '',
+          '各音声ライブラリの規約：',
+          for (final c in voicevoxCharacters) '${c.name}：${c.terms}',
+          '',
+          '追加の声は、公式の配布元（github.com/VOICEVOX/voicevox_vvm）から',
+          '端末へ直接ダウンロードしています。',
           'https://voicevox.hiroshiba.jp/',
         ].join('\n'),
       ),

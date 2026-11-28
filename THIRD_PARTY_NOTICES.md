@@ -9,8 +9,13 @@ Novelty 本体のライセンスは [LICENSE](LICENSE)（PolyForm Noncommercial 
 
 - **VOICEVOX:四国めたん**
 - **VOICEVOX:ずんだもん**
-- **VOICEVOX:九州そら**
-- **VOICEVOX:東北きりたん**
+- **VOICEVOX:春日部つむぎ**
+- **VOICEVOX:ナースロボ＿タイプＴ**
+- **VOICEVOX:中部つるぎ**（追加したとき）
+- **VOICEVOX:暁記ミタマ**（追加したとき）
+- **VOICEVOX:里石ユカ（つぼみ）**（追加したとき）
+- **VOICEVOX:九州そら**（追加したとき）
+- **VOICEVOX:東北きりたん**（追加したとき）
 
 アプリ内では、閲覧設定の声の選択肢（「VOICEVOX:四国めたん」など）と、
 「ライセンス」画面にも表記しています。
@@ -25,17 +30,36 @@ APK に同梱します。同梱しているものは次のとおりです。
 |---|---|---|---|
 | VOICEVOX CORE（Android 版） | 0.17.1 | [VOICEVOX/voicevox_core](https://github.com/VOICEVOX/voicevox_core) | MIT License |
 | VOICEVOX ONNX Runtime（android-arm64） | 1.23.2 | [VOICEVOX/onnxruntime-builder](https://github.com/VOICEVOX/onnxruntime-builder) | VOICEVOX ONNX Runtime 利用規約（ONNX Runtime は MIT License） |
-| VOICEVOX 音声モデル（0.vvm・2.vvm・5.vvm・15.vvm・21.vvm） | 0.17.1 | [VOICEVOX/voicevox_vvm](https://github.com/VOICEVOX/voicevox_vvm) | VOICEVOX 音声モデル利用規約・各音声ライブラリの規約 |
+| VOICEVOX 音声モデル（0.vvm・11.vvm） | 0.17.1 | [VOICEVOX/voicevox_vvm](https://github.com/VOICEVOX/voicevox_vvm) | VOICEVOX 音声モデル利用規約・各音声ライブラリの規約 |
 | Open JTalk 辞書（open_jtalk_dic_utf_8-1.11） | 1.11 | [r9y9/open_jtalk](https://github.com/r9y9/open_jtalk) | 修正 BSD ライセンス |
 
 各規約は、次の点を満たして利用しています。
 
 - 「アプリケーションに組み込んで再配布することができます」（音声モデル・ONNX Runtime 利用規約）
 - 「VOICEVOX を利用したことがわかるクレジット表記」（上記のクレジット）
-- 作成した音声の利用は、各音声ライブラリの規約に従う（四国めたん・ずんだもん・九州そら・東北きりたん：<https://zunko.jp/con_ongen_kiyaku.html>）
+- 作成した音声の利用は、各音声ライブラリの規約に従う（下の「各音声ライブラリ」）
 
-同梱のモデルには、上の4人のほかに同じファイルに入っている声（春日部つむぎ・雨晴はう・青山龍星・もち子さん・
-小夜/SAYO・猫使アル・猫使ビィ・東北ずん子・東北イタコ）も含まれますが、アプリでは選べるようにしていません。
+同梱のモデルには、選べる声のほかに同じファイルに入っている声（雨晴はう・櫻歌ミコ）も含まれますが、
+アプリでは選べるようにしていません。
+
+### あとから追加する声
+
+次のモデルは APK に入れず、アプリの閲覧設定「声を追加する」から、利用者の端末が
+公式の配布元（`https://github.com/VOICEVOX/voicevox_vvm/releases/download/0.17.1/<番号>.vvm`）
+へ直接取りに行きます。届いたファイルは SHA-256 で公式のものと照合してから使います
+（一覧と照合値は `lib/read_aloud/voicevox_models.dart`）。
+
+| ファイル | 使う声 |
+|---|---|
+| 18.vvm | 中部つるぎ |
+| 24.vvm | 暁記ミタマ・里石ユカ（同じファイルに夜語トバリも入っていますが選べません） |
+| 5.vvm | 四国めたん・ずんだもん・九州そらのささやき・ヒソヒソ |
+| 15.vvm | ずんだもんのなみだめ（同じファイルの青山龍星・もち子さん・小夜/SAYO は選べません） |
+| 2.vvm | 九州そら |
+| 21.vvm | 東北きりたん（同じファイルの東北ずん子・東北イタコ・猫使アル・猫使ビィは選べません） |
+
+以前の版で同梱していた 2.vvm・5.vvm・15.vvm・21.vvm は、更新後も端末に残っていれば
+そのまま「追加済み」として使い続けます。
 
 ---
 
@@ -81,6 +105,46 @@ https://zunko.jp/con_ongen_kiyaku.html
 
 利用規約の詳細は以下をご確認ください。
 https://zunko.jp/con_ongen_kiyaku.html
+
+#### 春日部つむぎ
+
+春日部つむぎの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:春日部つむぎ」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://tsumugi-official.studio.site/rule
+
+#### ナースロボ＿タイプＴ
+
+ナースロボ＿タイプＴの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:ナースロボ＿タイプＴ」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://www.krnr.top/rules
+
+#### 中部つるぎ
+
+中部つるぎの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:中部つるぎ」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://zunko.jp/con_ongen_kiyaku.html
+
+#### 暁記ミタマ
+
+暁記ミタマの音声ライブラリを用いて生成した音声は、
+「VOICEVOX:暁記ミタマ」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://yogataritobari.studio.site/#rules
+
+#### 里石ユカ
+
+里石ユカ（つぼみ）の音声ライブラリを用いて生成した音声は、
+「VOICEVOX:里石ユカ（つぼみ）」とクレジットを記載すれば、商用・非商用で利用可能です。
+
+利用規約の詳細は以下をご確認ください。
+https://satoishiyuka.wixsite.com/satoishi/kiyaku
 
 #### 九州そら
 

@@ -45,6 +45,10 @@ import java.util.zip.ZipInputStream
  *   status / prepare / synthesize(text, styleId, speed, pitch, intonation, volume, fresh)
  *   / prefetch(..., ahead) / configure(performance) / cancelPending / lastTiming
  *   / play(path) / stop
+ *   / models / extraDir / installModel(path, name, sha256) / removeModel(name)
+ * - 声のモデルは2種類：APK に同梱したもの（assets/voicevox/*.vvm）と、
+ *   あとから公式の配布元から落としたもの（filesDir/voicevox/extra/*.vvm）。
+ *   ダウンロード自体は Dart 側が行い、ここでは中身の確かめ（SHA-256）と登録だけをする。
  * - 合成スレッドは1本。[PrioritizedTask] の優先度キューで、今読む文（NOW）を
  *   先読み（NOW + ahead）より先に処理する。実行中のタスクは取り消さない
  *   （コアの合成は途中で止められず、取り消すと同じ文を二度作ることになるため）。
@@ -144,6 +148,24 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 mapOf("available" to hasBundledAssets(), "ready" to (synthesizer != null)),
             )
             "prepare" -> waitInBackground(result) { ensurePrepared(); true }
+            // 入っている声のモデルの一覧（準備しなくても答えられる）
+            "models" -> waitInBackground(result) {
+                runOnSynthesis(PRIORITY_SETUP) {
+                    runCatching { migrateOldCopies(voicevoxRoot(), bundledModels()) }
+                    modelsInfo()
+                }.get()
+            }
+            "extraDir" -> result.success(extraDir().absolutePath)
+            "installModel" -> {
+                val path = call.argument<String>("path")!!
+                val name = call.argument<String>("name")!!
+                val sha256 = call.argument<String>("sha256")
+                waitInBackground(result) { installModel(File(path), name, sha256) }
+            }
+            "removeModel" -> {
+                val name = call.argument<String>("name")!!
+                waitInBackground(result) { removeModel(name) }
+            }
             "synthesize" -> {
                 val request = SynthesisRequest.from(call)
                 // 診断では、取っておいた声を使わず必ず作り直して速さを測る
@@ -208,8 +230,110 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
 
     private fun hasBundledAssets(): Boolean = runCatching {
         val files = context.assets.list(ASSET_DIR)?.toSet() ?: emptySet()
-        files.contains(DICT_ZIP) && MODEL_FILES.all { files.contains(it) }
+        files.contains(DICT_ZIP) && bundledModels().isNotEmpty()
     }.getOrDefault(false)
+
+    // APK に同梱した声のモデル（CI で入れたものをそのまま使う）
+    private fun bundledModels(): List<String> = runCatching {
+        context.assets.list(ASSET_DIR)?.filter { it.endsWith(".vvm") }?.sorted()
+    }.getOrNull() ?: emptyList()
+
+    private fun voicevoxRoot(): File = File(context.filesDir, "voicevox").apply { mkdirs() }
+
+    // あとから追加した声のモデルの置き場所
+    private fun extraDir(): File = File(voicevoxRoot(), "extra").apply { mkdirs() }
+
+    // モデルの中の声をすべて「声の種類 → ファイル」に登録する
+    private fun registerStyles(file: File) {
+        VoiceModelFile(file.absolutePath).use { model ->
+            for (character in model.metas) {
+                for (style in character.styles) {
+                    modelOfStyle[style.id] = file.absolutePath
+                }
+            }
+        }
+    }
+
+    private fun modelsInfo(): Map<String, Any> = mapOf(
+        "bundled" to bundledModels(),
+        "extra" to (extraDir().listFiles { f -> f.name.endsWith(".vvm") }
+            ?.map { it.name }?.sorted() ?: emptyList<String>()),
+    )
+
+    private fun sha256Of(file: File): String {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(1 shl 20)
+            while (true) {
+                val n = input.read(buffer)
+                if (n < 0) break
+                digest.update(buffer, 0, n)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /**
+     * 落としたモデル [downloaded] を確かめて extra へ移し、使えるようにする。
+     * 中身が壊れていたら（SHA-256 が違う・コアで開けない）消して失敗にする。
+     */
+    private fun installModel(downloaded: File, name: String, sha256: String?): Map<String, Any> {
+        require(name.matches(Regex("[0-9]+\\.vvm"))) { "モデルの名前が正しくありません: $name" }
+        try {
+            if (sha256 != null) {
+                val actual = step("ダウンロードの確認") { sha256Of(downloaded) }
+                check(actual.equals(sha256, ignoreCase = true)) {
+                    "ダウンロードしたファイルが壊れています（もう一度お試しください）"
+                }
+            }
+            val target = File(extraDir(), name)
+            // 合成スレッドで差し替える（読み込み中のモデルを横から消さないため）
+            return runOnSynthesis(PRIORITY_SETUP) {
+                unloadPath(target.absolutePath)
+                target.delete()
+                check(downloaded.renameTo(target)) { "モデルを置けませんでした" }
+                if (synthesizer != null) {
+                    try {
+                        step("声のモデルの確認（$name）") { registerStyles(target) }
+                    } catch (e: Exception) {
+                        target.delete()
+                        throw e
+                    }
+                }
+                modelsInfo()
+            }.get()
+        } finally {
+            downloaded.delete()
+        }
+    }
+
+    // 追加したモデルを消す（同梱のものは消せない）
+    private fun removeModel(name: String): Map<String, Any> =
+        runOnSynthesis(PRIORITY_SETUP) {
+            val target = File(extraDir(), name)
+            unloadPath(target.absolutePath)
+            modelOfStyle.entries.removeAll { it.value == target.absolutePath }
+            target.delete()
+            synchronized(cache) { cache.clear() }
+            modelsInfo()
+        }.get()
+
+    private fun unloadPath(path: String) {
+        val id = loadedModels.remove(path) ?: return
+        runCatching { synthesizer?.unloadVoiceModel(id) }
+    }
+
+    // 以前の版は 2.vvm などを APK に同梱して filesDir/voicevox にコピーしていた。
+    // 今の APK に入っていないモデルは、追加分として extra へ移して使い続ける
+    // （落とし直さずに済むように）。
+    private fun migrateOldCopies(root: File, bundled: List<String>) {
+        val old = root.listFiles { f -> f.isFile && f.name.endsWith(".vvm") } ?: return
+        for (file in old) {
+            if (file.name in bundled) continue
+            val target = File(extraDir(), file.name)
+            if (target.exists()) file.delete() else file.renameTo(target)
+        }
+    }
 
     private fun ensurePrepared() {
         val future = synchronized(this) {
@@ -231,7 +355,9 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
             context.cacheDir.listFiles { f -> f.name.startsWith("voicevox_") }
                 ?.forEach { it.delete() }
         }
-        val root = File(context.filesDir, "voicevox").apply { mkdirs() }
+        val root = voicevoxRoot()
+        val bundled = bundledModels()
+        runCatching { migrateOldCopies(root, bundled) }
         val dictDir = File(root, "dict")
         val dictMarker = File(dictDir, ".done")
         if (!dictMarker.exists()) {
@@ -242,7 +368,7 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 dictMarker.writeText("ok")
             }
         }
-        val modelFiles = MODEL_FILES.map { name ->
+        val modelFiles = bundled.map { name ->
             val target = File(root, name)
             val expected = assetLength("$ASSET_DIR/$name")
             if (!target.exists() || (expected >= 0 && target.length() != expected)) {
@@ -258,15 +384,13 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         openJtalk = step("辞書の読み込み（$dictPath）") { OpenJtalk(dictPath) }
         // どの声がどのモデルに入っているかだけ先に調べる（読み込みは使うときに行う）
         for (file in modelFiles) {
-            step("声のモデルの確認（${file.name}）") {
-                VoiceModelFile(file.absolutePath).use { model ->
-                    for (character in model.metas) {
-                        for (style in character.styles) {
-                            modelOfStyle[style.id] = file.absolutePath
-                        }
-                    }
-                }
-            }
+            step("声のモデルの確認（${file.name}）") { registerStyles(file) }
+        }
+        // あとから追加したモデル（壊れているものは飛ばす）
+        val extra = extraDir().listFiles { f -> f.name.endsWith(".vvm") }?.sortedBy { it.name }
+        for (file in extra ?: emptyList()) {
+            runCatching { registerStyles(file) }
+                .onFailure { Log.w(TAG, "extra model ${file.name} skipped", it) }
         }
         step("音声合成の準備") { build(desiredThreads()) }
         Log.i(TAG, "VOICEVOX ready")
@@ -614,11 +738,8 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
         private const val MAX_LOADED_MODELS_STANDARD = 2
         private const val MAX_LOADED_MODELS_FULL = 3
 
-        // 0.vvm: 四国めたん・ずんだもん（ノーマル・あまあま・ツンツン・セクシー）
-        // 2.vvm: 九州そら（ノーマル・あまあま・ツンツン・セクシー）
-        // 5.vvm: 四国めたん・ずんだもん・九州そら（ささやき・ヒソヒソ）
-        // 15.vvm: ずんだもん（ヘロヘロ・なみだめ）
-        // 21.vvm: 東北きりたん（ノーマル）
-        private val MODEL_FILES = listOf("0.vvm", "2.vvm", "5.vvm", "15.vvm", "21.vvm")
+        // 同梱するモデルは CI（.github/workflows/ci.yml）で決める。
+        //   0.vvm: 四国めたん・ずんだもん・春日部つむぎ　11.vvm: ナースロボ＿タイプＴ
+        // ほかはアプリの設定画面から公式の配布元より追加する（voicevox_models.dart）。
     }
 }

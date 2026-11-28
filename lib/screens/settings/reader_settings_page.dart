@@ -6,6 +6,7 @@ import 'package:narou_parser/narou_parser.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_document.dart';
 import 'package:novelty/read_aloud/voicevox_engine.dart';
+import 'package:novelty/read_aloud/voicevox_models.dart';
 import 'package:novelty/utils/reader_appearance.dart';
 import 'package:novelty/utils/settings_provider.dart';
 import 'package:novelty/widgets/read_aloud_bar.dart';
@@ -426,6 +427,7 @@ class ReaderSettingsPage extends ConsumerWidget {
           ),
         ),
         const _VoicevoxDiagnosis(),
+        const _VoicevoxModelList(),
         const Padding(
           padding: EdgeInsets.fromLTRB(16, 0, 16, 16),
           child: Text(
@@ -723,11 +725,21 @@ class _VoicePickerState extends State<_VoicePicker> {
       availableJapaneseVoices(),
       VoicevoxBridge.isAvailable(),
     ]);
-    return (results[0] as List<TtsVoice>, results[1] as bool);
+    final voicevox = results[1] as bool;
+    if (voicevox) await VoicevoxModels.refresh();
+    return (results[0] as List<TtsVoice>, voicevox);
   }();
 
   @override
   Widget build(BuildContext context) {
+    // 声を追加・削除したら、選べる声の一覧を作り直す
+    return ValueListenableBuilder<Set<String>?>(
+      valueListenable: VoicevoxModels.installed,
+      builder: (context, installed, _) => _build(context, installed),
+    );
+  }
+
+  Widget _build(BuildContext context, Set<String>? installed) {
     return FutureBuilder<(List<TtsVoice>, bool)>(
       future: _voices,
       builder: (context, snapshot) {
@@ -752,6 +764,7 @@ class _VoicePickerState extends State<_VoicePicker> {
               defaultLabel: '端末の標準',
               voices: voices,
               voicevox: voicevox,
+              installed: installed,
               onChanged: widget.onNarrationChanged,
             ),
             _dropdown(
@@ -760,6 +773,7 @@ class _VoicePickerState extends State<_VoicePicker> {
               defaultLabel: '地の文と同じ',
               voices: voices,
               voicevox: voicevox,
+              installed: installed,
               onChanged: widget.onDialogueChanged,
             ),
           ],
@@ -774,12 +788,19 @@ class _VoicePickerState extends State<_VoicePicker> {
     required String defaultLabel,
     required List<TtsVoice> voices,
     required bool voicevox,
+    required Set<String>? installed,
     required ValueChanged<String> onChanged,
   }) {
+    // モデルが入っている声だけを選べるようにする
+    final characters = [
+      if (voicevox)
+        for (final c in voicevoxCharacters)
+          if (installed == null || installed.contains(c.model)) c,
+    ];
     final known =
         value.isEmpty ||
         voices.any((v) => v.name == value) ||
-        (voicevox && voicevoxCharacterOf(value) != null);
+        characters.any((c) => c.voice == value);
     return ListTile(
       title: Text(title),
       trailing: DropdownButton<String>(
@@ -789,8 +810,7 @@ class _VoicePickerState extends State<_VoicePicker> {
         },
         items: [
           DropdownMenuItem(value: '', child: Text(defaultLabel)),
-          if (voicevox)
-            for (final c in voicevoxCharacters)
+          for (final c in characters)
               // クレジット表記を兼ねて「VOICEVOX:四国めたん」と出す
               DropdownMenuItem(value: c.voice, child: Text(c.credit)),
           for (var i = 0; i < voices.length; i++)
@@ -923,6 +943,157 @@ class _VoicevoxDiagnosisState extends State<_VoicevoxDiagnosis> {
           onTap: _running ? null : () => unawaited(_run()),
         );
       },
+    );
+  }
+}
+
+/// あとから追加できる VOICEVOX の声（公式の配布元から落とす）。
+class _VoicevoxModelList extends StatefulWidget {
+  const _VoicevoxModelList();
+
+  @override
+  State<_VoicevoxModelList> createState() => _VoicevoxModelListState();
+}
+
+class _VoicevoxModelListState extends State<_VoicevoxModelList> {
+  late final Future<bool> _available = () async {
+    final available = await VoicevoxBridge.isAvailable();
+    if (available) await VoicevoxModels.refresh();
+    return available;
+  }();
+
+  final _listenable = Listenable.merge([
+    VoicevoxModels.installed,
+    VoicevoxModels.downloading,
+  ]);
+
+  Future<void> _download(VoicevoxModelPack pack) async {
+    try {
+      await VoicevoxModels.download(pack);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${pack.title}の声を追加しました')),
+      );
+    } on VoicevoxDownloadCancelled {
+      // やめたときは何も出さない
+    } on Object catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('追加できませんでした：${describeVoicevoxError(e)}'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _remove(VoicevoxModelPack pack) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('${pack.title}の声を消しますか？'),
+        content: Text('${pack.sizeLabel} 空きます。あとでまた追加できます。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('やめる'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('消す'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await VoicevoxModels.remove(pack);
+    } on Object catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('消せませんでした：${describeVoicevoxError(e)}')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: _available,
+      builder: (context, snapshot) {
+        if (snapshot.data != true) return const SizedBox.shrink();
+        return ListenableBuilder(
+          listenable: _listenable,
+          builder: (context, _) => ExpansionTile(
+            leading: const Icon(Icons.record_voice_over_outlined),
+            title: const Text('声を追加する'),
+            subtitle: const Text('公式の配布元からダウンロードします（Wi-Fi 推奨）'),
+            children: [
+              for (final pack in voicevoxModelPacks) _tile(pack),
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Text(
+                  '声は github.com/VOICEVOX/voicevox_vvm の公式ファイルを'
+                  'そのまま使い、届いた中身を照合してから入れます。'
+                  '利用規約とクレジットは「ライセンス」に載せています。',
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _tile(VoicevoxModelPack pack) {
+    final progress = VoicevoxModels.downloading.value[pack.file];
+    final added = VoicevoxModels.extra.value.contains(pack.file);
+    final Widget trailing;
+    if (progress != null) {
+      trailing = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(
+              value: progress == 0 ? null : progress,
+            ),
+          ),
+          IconButton(
+            tooltip: 'やめる',
+            icon: const Icon(Icons.close),
+            onPressed: () => VoicevoxModels.cancel(pack),
+          ),
+        ],
+      );
+    } else if (added) {
+      trailing = IconButton(
+        tooltip: '消す',
+        icon: const Icon(Icons.delete_outline),
+        onPressed: () => unawaited(_remove(pack)),
+      );
+    } else {
+      trailing = IconButton(
+        tooltip: 'ダウンロード',
+        icon: const Icon(Icons.download),
+        onPressed: () => unawaited(_download(pack)),
+      );
+    }
+    return ListTile(
+      title: Text(pack.title),
+      subtitle: Text(
+        [
+          pack.description,
+          if (progress != null)
+            '${(progress * 100).round()}%（${pack.sizeLabel}）'
+          else if (added)
+            '追加済み（${pack.sizeLabel}）'
+          else
+            pack.sizeLabel,
+        ].join('\n'),
+      ),
+      isThreeLine: true,
+      trailing: trailing,
     );
   }
 }
