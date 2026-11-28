@@ -10,6 +10,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:novelty/read_aloud/english_reading.dart';
 import 'package:novelty/read_aloud/read_aloud_controller.dart';
 import 'package:novelty/read_aloud/speech_direction.dart';
 import 'package:novelty/read_aloud/voicevox_models.dart';
@@ -349,6 +350,18 @@ class VoicevoxBridge {
   static Future<void> play(String path) =>
       _channel.invokeMethod<void>('play', {'path': path});
 
+  /// 英単語（a〜z の小文字）の読みを kanalizer で推測する（推測できなければ空文字）。
+  static Future<List<String>> kanalize(List<String> words) async {
+    final result = await _channel.invokeListMethod<String>('kanalize', {
+      'words': words,
+    });
+    return result ?? const [];
+  }
+
+  /// 文の中の英単語をカタカナにする（辞書 → kanalizer の順）。
+  static Future<String> readEnglish(String text) =>
+      readEnglishAsKana(text, infer: kanalize);
+
   /// 鳴らしている声を止める。
   static Future<void> stop() => _channel.invokeMethod<void>('stop');
 
@@ -529,9 +542,11 @@ class VoicevoxEngine implements SpeechEngine {
         onTimeout: () {},
       );
       // 長い文は分けて作るので、先読みも最初の一切れだけ作っておく
+      // （英単語は読む時と同じくカタカナにしておかないと、先読みが無駄になる）
+      final spoken = await VoicevoxBridge.readEnglish(text);
       await VoicevoxBridge.prefetch(
         VoicevoxRequest.of(
-          splitForVoicevox(text).first,
+          splitForVoicevox(spoken).first,
           prosody,
           _characterOf(voice),
           direction,
@@ -557,8 +572,11 @@ class VoicevoxEngine implements SpeechEngine {
       intonation: base.intonation,
       volume: base.volume,
     );
+    // VOICEVOX は英語を読めないので、英単語はカタカナにしてから渡す
+    final spoken = await VoicevoxBridge.readEnglish(text);
+    if (_stopped) return;
     // 長い文は切れ目で分け、一切れずつ作って鳴らす（次の一切れは鳴らしている間に作る）
-    final chunks = splitForVoicevox(text);
+    final chunks = splitForVoicevox(spoken);
     for (var i = 0; i < chunks.length; i++) {
       final String? path;
       try {
@@ -736,6 +754,35 @@ void registerVoicevoxLicenses() {
         'permission notice shall be included in all copies or substantial '
         'portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", '
         'WITHOUT WARRANTY OF ANY KIND.',
+      ),
+      LicenseEntryWithLineBreaks(
+        ['kanalizer（英単語の読みの推測）'],
+        [
+          'VOICEVOX で読むとき、英単語のつづりからカタカナの読みを推測するのに',
+          'kanalizer（https://github.com/VOICEVOX/kanalizer）を使っています。',
+          '',
+          'MIT License',
+          '',
+          'Copyright (c) 2025 VOICEVOX',
+          '',
+          [
+            'Permission is hereby granted, free of charge, to any person ',
+            'obtaining a copy of this software and associated documentation ',
+            'files (the "Software"), to deal in the Software without ',
+            'restriction, including without limitation the rights to use, ',
+            'copy, modify, merge, publish, distribute, sublicense, and/or ',
+            'sell copies of the Software, and to permit persons to whom the ',
+            'Software is furnished to do so, subject to the following ',
+            'conditions:',
+          ].join(),
+          '',
+          [
+            'The above copyright notice and this permission notice shall be ',
+            'included in all copies or substantial portions of the Software.',
+          ].join(),
+          '',
+          'THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.',
+        ].join('\n'),
       ),
       LicenseEntryWithLineBreaks(
         ['Open JTalk / open_jtalk_dic'],

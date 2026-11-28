@@ -1,0 +1,25 @@
+# 英単語をカタカナの読みに直す kanalizer（VOICEVOX 製・MIT）を、
+# Android から呼べるようにする小さな橋渡し（フォークで追加）。
+# CI（.github/workflows/ci.yml の「Build kanalizer」）が cargo-ndk で
+# arm64 向けにビルドし、libkanalizer_jni.so を APK に入れる。
+[package]
+name = "kanalizer_jni"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# タグが無いため、確かめた版のコミットで固定する
+kanalizer = { git = "https://github.com/VOICEVOX/kanalizer", rev = "b061e715107879e338c5707d628b114e5752783c" }
+jni = { version = "0.21", default-features = false }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "unwind"

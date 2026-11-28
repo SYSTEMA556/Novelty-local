@@ -32,6 +32,7 @@ APK に同梱します。同梱しているものは次のとおりです。
 | VOICEVOX ONNX Runtime（android-arm64） | 1.23.2 | [VOICEVOX/onnxruntime-builder](https://github.com/VOICEVOX/onnxruntime-builder) | VOICEVOX ONNX Runtime 利用規約（ONNX Runtime は MIT License） |
 | VOICEVOX 音声モデル（0.vvm・11.vvm） | 0.17.1 | [VOICEVOX/voicevox_vvm](https://github.com/VOICEVOX/voicevox_vvm) | VOICEVOX 音声モデル利用規約・各音声ライブラリの規約 |
 | Open JTalk 辞書（open_jtalk_dic_utf_8-1.11） | 1.11 | [r9y9/open_jtalk](https://github.com/r9y9/open_jtalk) | 修正 BSD ライセンス |
+| kanalizer（英単語の読みの推測・モデル込み） | コミット b061e71 | [VOICEVOX/kanalizer](https://github.com/VOICEVOX/kanalizer)（モデルは Hugging Face の VOICEVOX/kanalizer-model） | MIT License（Copyright (c) 2025 VOICEVOX） |
 
 各規約は、次の点を満たして利用しています。
 

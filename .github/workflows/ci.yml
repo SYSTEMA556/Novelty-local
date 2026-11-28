@@ -153,6 +153,23 @@ jobs:
           done
           ls -la android/app/src/main/assets/voicevox android/app/src/main/jniLibs/arm64-v8a
 
+      # 英単語の読みを推測する kanalizer（VOICEVOX 製・MIT）を arm64 向けにビルドする。
+      # モデルはビルド時に Hugging Face（VOICEVOX/kanalizer-model）から取得され、
+      # ライブラリに埋め込まれる。中身は native/kanalizer_jni を見てください。
+      - name: Build kanalizer
+        run: |
+          set -euxo pipefail
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          test -d "$ANDROID_NDK_HOME"
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-linux-android
+          cargo install cargo-ndk --locked
+          cd native/kanalizer_jni
+          cargo ndk -t arm64-v8a -o ../../android/app/src/main/jniLibs \
+            build --release
+          ls -la ../../android/app/src/main/jniLibs/arm64-v8a
+
       - name: Build Android APK (release)
         run: flutter build apk --release
 

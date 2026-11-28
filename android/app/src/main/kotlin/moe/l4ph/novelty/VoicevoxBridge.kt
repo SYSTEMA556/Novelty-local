@@ -45,7 +45,7 @@ import java.util.zip.ZipInputStream
  *   status / prepare / synthesize(text, styleId, speed, pitch, intonation, volume, fresh)
  *   / prefetch(..., ahead) / configure(performance) / cancelPending / lastTiming
  *   / play(path) / stop
- *   / models / extraDir / installModel(path, name, sha256) / removeModel(name)
+ *   / models / extraDir / kanalize(words) / installModel(path, name, sha256) / removeModel(name)
  * - 声のモデルは2種類：APK に同梱したもの（assets/voicevox/*.vvm）と、
  *   あとから公式の配布元から落としたもの（filesDir/voicevox/extra/*.vvm）。
  *   ダウンロード自体は Dart 側が行い、ここでは中身の確かめ（SHA-256）と登録だけをする。
@@ -156,6 +156,11 @@ class VoicevoxBridge(private val context: Context, messenger: BinaryMessenger) :
                 }.get()
             }
             "extraDir" -> result.success(extraDir().absolutePath)
+            // 英単語の読みの推測（合成とは別のスレッドで行う）
+            "kanalize" -> {
+                val words = call.argument<List<String>>("words") ?: emptyList()
+                waitInBackground(result) { Kanalizer.convert(words) }
+            }
             "installModel" -> {
                 val path = call.argument<String>("path")!!
                 val name = call.argument<String>("name")!!
